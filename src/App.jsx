@@ -1,27 +1,15 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Onboarding from "./onBoarding";
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <h1>GradSIS</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          sign up 
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Plan your courses ahead! 
-      </p>
-    </>
-  )
+    <Router>
+      <Routes>
+        <Route path="/onboarding" element={<Onboarding />} />
+      </Routes>
+    </Router>
+  );
 }
 
-export default App
+export default App;
