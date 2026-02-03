@@ -1,27 +1,5 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import FigmaApp from "../app/App.tsx";
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <h1>GradSIS</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          sign up 
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Plan your courses ahead! 
-      </p>
-    </>
-  )
+export default function App() {
+  return <FigmaApp />;
 }
-
-export default App
