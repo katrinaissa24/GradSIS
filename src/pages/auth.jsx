@@ -3,42 +3,46 @@ import React, { useState } from 'react';
 import email_icon from '../assets/email.png'
 import password_icon from '../assets/password.png'
 import user_icon from '../assets/person.png'
+import { signUp, signIn } from "../services/auth"; 
+import { supabase } from '../services/supabase';
 
-const API_BASE = '/api/auth';
 
-const auth = () => {
+const AuthPage = () => {
     const [action, setAction] = useState("Sign Up");
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [message, setMessage] = useState({ text: "", isError: false });
     const [loading, setLoading] = useState(false);
-
+    
     const handleSubmit = async () => {
         setMessage({ text: "", isError: false });
         setLoading(true);
 
         try {
-            const url = action === "Sign Up" ? API_BASE + '/signup' : API_BASE + '/login';
-            const body = action === "Sign Up" ? { name, email, password } : { email, password };
-            const res = await fetch(url, {method: 'POST',headers: { 'Content-Type': 'application/json' },body: JSON.stringify(body),
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                setMessage({ text: data.message, isError: false });
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify(data.user));
+            if (action === "Sign Up") {
+                // Call Supabase directly
+                await signUp(email, password);
+                setMessage({ text: "Check your email to confirm your account!", isError: false });
             } else {
-                setMessage({ text: data.message || 'Something went wrong', isError: true });
+                await signIn(email, password);
+                setMessage({ text: "Logged in successfully!", isError: false });
             }
+
+            // Optionally save user in localStorage
+            // const session = await getSession();
+            // localStorage.setItem('user', JSON.stringify(session?.user));
+
         } catch (err) {
-            setMessage({ text: 'Please try again', isError: true });
+            // log full error to browser console to aid debugging
+            // (keeps existing user-facing message behavior)
+            console.error('Auth error:', err);
+            setMessage({ text: err.message || "Something went wrong", isError: true });
         } finally {
             setLoading(false);
         }
     };
+
     return (
         <>
             <div className="site-title">GradSIS</div>
@@ -134,4 +138,4 @@ const auth = () => {
     );
 }
 
-export default auth;
+export default AuthPage;

@@ -2,7 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Onboarding from "./onBoarding";
 import Auth from "./pages/Auth";
-import Home from "./pages/Home";
+import Home from "./pages/home";
 
 function App() {
   return (
