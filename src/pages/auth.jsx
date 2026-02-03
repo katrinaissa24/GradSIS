@@ -1,4 +1,4 @@
-import './LoginSignup.css';
+import './auth.css';
 import React, { useState } from 'react';
 import email_icon from '../assets/email.png'
 import password_icon from '../assets/password.png'
@@ -6,7 +6,7 @@ import user_icon from '../assets/person.png'
 
 const API_BASE = '/api/auth';
 
-const LoginSignup = () => {
+const auth = () => {
     const [action, setAction] = useState("Sign Up");
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
@@ -134,4 +134,4 @@ const LoginSignup = () => {
     );
 }
 
-export default LoginSignup;
+export default auth;
