@@ -1,4 +1,6 @@
-import { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { supabase } from "./services/supabase";
+
 
 // Custom Dropdown Component
 function CustomDropdown({ value, onChange, options, placeholder }) {
@@ -74,6 +76,37 @@ export default function OnBoarding() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [majors, setMajors] = useState([]);
+
+
+  useEffect(() => {
+  const loadMajors = async () => {
+    const { data, error } = await supabase
+      .from("majors")
+      .select("*")
+      .order("name", { ascending: true });
+
+    console.log("majors:", data, error);
+
+    if (!error) setMajors(data ?? []);
+  };
+
+  loadMajors();
+}, []);
+
+  useEffect(() => {
+    const signInTestUser = async () => {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: "jaa118@mail.aub.edu",
+        password: "jaatest06",
+      });
+
+      console.log("SIGNED IN:", data, error);
+    };
+
+    signInTestUser();
+  }, []);
+
 
   function computeCatalogYear(term, year) {
     if (!term || !year) return "";
@@ -88,17 +121,45 @@ export default function OnBoarding() {
 
   async function saveProfile() {
     if (!isComplete) return;
+
     setLoading(true);
     setError(null);
+
     try {
-      console.log("Profile to save:", profile);
-      alert("(DB not connected)");
+      // 1️⃣ Get logged-in user
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("Not authenticated");
+      }
+
+      // 2️⃣ Insert profile
+      const { error: insertError } = await supabase
+        .from("profiles")
+        .insert({
+          user_id: user.id,
+          academic_standing: profile.academicStanding,
+          major_id: profile.major,
+          starting_term: profile.startingTerm,
+          starting_year: profile.startingYear
+        });
+
+      if (insertError) throw insertError;
+
+      alert("Profile saved successfully ✅");
+
     } catch (err) {
+      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
+
 
   const academicStandingOptions = [
     { value: "freshman", label: "Freshman" },
@@ -106,9 +167,10 @@ export default function OnBoarding() {
     { value: "regular", label: "Regular" }
   ];
 
-  const majorOptions = [
-    { value: "CS", label: "Computer Science" }
-  ];
+  const majorOptions = majors.map((m) => ({
+  value: m.id,
+  label: m.name
+}));
 
   const termOptions = [
     { value: "fall", label: "Fall" },
