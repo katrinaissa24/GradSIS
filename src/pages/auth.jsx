@@ -5,6 +5,7 @@ import password_icon from '../assets/password.png'
 import user_icon from '../assets/person.png'
 import { signUp, signIn } from "../services/auth"; 
 import { supabase } from '../services/supabase';
+import { useNavigate } from "react-router-dom";
 
 
 const AuthPage = () => {
@@ -14,6 +15,7 @@ const AuthPage = () => {
     const [password, setPassword] = useState("");
     const [message, setMessage] = useState({ text: "", isError: false });
     const [loading, setLoading] = useState(false);
+    const navigate = useNavigate();
     
     const handleSubmit = async () => {
         setMessage({ text: "", isError: false });
@@ -25,17 +27,15 @@ const AuthPage = () => {
                 await signUp(email, password);
                 setMessage({ text: "Check your email to confirm your account!", isError: false });
             } else {
-                await signIn(email, password);
-                setMessage({ text: "Logged in successfully!", isError: false });
+                const { data, error } = await signIn(email, password);
+                if (error) throw error;
+                // Supabase has now created the auth session token (JWT)
+                // data.session.access_token exists here
+                setMessage({ text: "Logged in successfully!", isError: false });    
+                // redirect after login
+                navigate("/dashboard");
             }
-
-            // Optionally save user in localStorage
-            // const session = await getSession();
-            // localStorage.setItem('user', JSON.stringify(session?.user));
-
         } catch (err) {
-            // log full error to browser console to aid debugging
-            // (keeps existing user-facing message behavior)
             console.error('Auth error:', err);
             setMessage({ text: err.message || "Something went wrong", isError: true });
         } finally {
