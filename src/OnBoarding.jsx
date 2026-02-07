@@ -119,45 +119,37 @@ export default function OnBoarding() {
     profile.startingTerm &&
     profile.startingYear;
 
-  async function saveProfile() {
-    if (!isComplete) return;
-
+    async function saveProfile() {
     setLoading(true);
     setError(null);
 
     try {
-      // 1️⃣ Get logged-in user
-      const {
-        data: { user },
-        error: userError
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
 
-      if (userError || !user) {
-        throw new Error("Not authenticated");
-      }
+      const payload = {
+        id: user.id,                 
+        academic_standing: profile.academicStanding,
+        major_id: profile.major,     
+        starting_term: profile.startingTerm,
+        starting_year: profile.startingYear,
+        catalog_year: profile.catalogYear,
+      };
 
-      // 2️⃣ Insert profile
-      const { error: insertError } = await supabase
+      const { error } = await supabase
         .from("profiles")
-        .insert({
-          user_id: user.id,
-          academic_standing: profile.academicStanding,
-          major_id: profile.major,
-          starting_term: profile.startingTerm,
-          starting_year: profile.startingYear
-        });
+        .upsert(payload);
 
-      if (insertError) throw insertError;
+      if (error) throw error;
 
-      alert("Profile saved successfully ✅");
-
+      alert("Profile saved ✅");
     } catch (err) {
-      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
 
 
 
