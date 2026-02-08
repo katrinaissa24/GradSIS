@@ -137,7 +137,7 @@ export default function OnBoarding() {
     profile.startingTerm &&
     profile.startingYear;
 
-  async function saveProfile() {
+    async function saveProfile() {
     if (!isComplete) return;
     setLoading(true);
     setError(null);
@@ -148,24 +148,28 @@ export default function OnBoarding() {
       if (!user) throw new Error("Not authenticated");
 
       const payload = {
-        major_id: profile.major,            
+        id: user.id,                   
+        email: user.email,                
+        major_id: profile.major,
         starting_term_id: profile.startingTerm,
       };
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("users")
-        .update(payload)
-        .eq("id", user.id);
+        .upsert(payload)     
+        .select();
 
       if (error) throw error;
 
-      alert("Saved ✅ (users table updated)");
+      console.log("UPSERT users result:", data);
+      alert("Saved ✅ (users table upserted)");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
 
 
 
@@ -182,10 +186,12 @@ export default function OnBoarding() {
   label: m.name
 }));
 
-  const termOptions = [
-    { value: "fall", label: "Fall" },
-    { value: "spring", label: "Spring" },
-  ];
+  const startingTermOptions = [
+  { value: "fall", label: "Fall" },
+  { value: "spring", label: "Spring" },
+];
+
+
 
   return (
     <div style={styles.page}>
@@ -229,10 +235,10 @@ export default function OnBoarding() {
                   setProfile(p => ({
                     ...p,
                     startingTerm: value,
-                    catalogYear: computeCatalogYear(value, p.startingYear)
+                    catalogYear: p.catalogYear
                   }));
                 }}
-                options={termOptions}
+                options={startingTermOptions}
                 placeholder="Select term"
               />
             </div>
