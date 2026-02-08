@@ -1,0 +1,225 @@
+body{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #59d687, #047857);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 5px;
+}
+
+.left-side-container {
+    position: absolute;
+    top: 10px;
+    left: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    z-index: 100;
+}
+
+.gradsis-logo {
+    font-size: 20px;
+    font-weight: 900;
+    color: white;
+    letter-spacing: 1.5px;
+    padding: 5px 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.homepage-button {
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.3s ease;
+    text-decoration: none;
+}
+
+.homepage-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+.homepage-button:active {
+    transform: scale(0.95);
+}
+
+.site-title {
+    display: none;
+}
+
+.tagline {
+    display: none;
+}
+
+.container{
+    display:flex;
+    flex-direction:column;
+    margin: auto;
+    width: 420px;
+    margin-top: 20px; 
+    background: #fff;
+    padding-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+    transition: transform 0.3s ease;
+}
+
+.container:hover{
+    transform: translateY(-1px);
+}
+
+.header{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-top: 20px;
+}
+
+.text{
+    color:#3eae57;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+
+.underline{
+    width: 45px;
+    height: 3.5px;
+    background: linear-gradient(90deg, #30b166, #4cc879);
+    border-radius: 5px;
+}
+
+.message{
+    width: 360px;
+    margin: 10px auto 0;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.message.success{
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.message.error{
+    background: #ffebee;
+    color: #c62828;
+}
+
+.inputs{
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.input{
+    display: flex;
+    align-items: center;
+    margin: auto;
+    width: 360px;
+    height: 52px;
+    background: #f3f3f3;
+    border-radius: 8px;
+    transition: transform 0.2s ease;
+}
+
+.input:hover{
+    transform: scale(1.004);
+}
+
+.input img{
+    width: 18px;
+    height: 18px;
+    margin: 0 16px;
+}
+
+.input input{
+    height: 36px;
+    width: 280px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #555;
+    font-size: 14px;
+}
+
+.forgot-password{
+    width: 360px;
+    margin: 12px auto 0;
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+}
+
+.forgot-password span{
+    color: #047857;
+    cursor:pointer;
+    font-weight: 600;
+}
+
+.forgot-password span:hover{
+    text-decoration: underline;
+}
+
+.tab-container{
+    display: flex;
+    gap: 18px;
+    margin: 25px auto 10px;
+}
+
+.submit{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 160px;
+    height: 45px;
+    color:white;
+    background: linear-gradient(135deg, #41cd7b, #047857);
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+    box-shadow: 0 5px 10px rgba(0, 157, 58, 0.15);
+}
+
+.submit:hover{
+    transform: scale(1.02);
+}
+
+.submit:active{
+    transform: scale(1.02);
+}
+
+.gray{
+    background:#eaeaea;
+    color: #676767;
+    box-shadow: none;
+    cursor: default;
+}
+
+.gray:hover{
+    transform: none;
+}
+
+.submit-container {
+    display: flex;
+    justify-content: center;   
+    margin: 25px auto 10px;
+}
