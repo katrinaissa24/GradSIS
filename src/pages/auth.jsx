@@ -43,13 +43,51 @@ const AuthPage = () => {
 
     try {
       if (action === "Sign Up") {
-        // Call Supabase directly
-        await signUp(email, password);
-        setMessage({
-          text: "Check your email to confirm your account!",
-          isError: false,
-        });
-      } else {
+  try {
+    setMessage({ text: "", isError: false });
+
+    // 1️⃣ Sign up in Auth
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (signUpError) throw signUpError;
+
+    const { data: userData, error: insertError } = await supabase
+  .from("users")
+  .insert([
+    {
+      id: authData.user.id,               // MUST come from Auth
+      email: authData.user.email,         // NOT NULL
+      name: name || null,                 // optional
+      major_id: null,                     // optional, can stay null at signup
+      starting_term_id: null,             // optional
+      current_gpa: null,                  // optional
+      credits_completed: 0,               // default value
+      student_type: null                   // optional
+    }
+  ])
+  .select(); // optional, returns the inserted row
+
+
+    if (insertError) throw insertError;
+
+    // 3️⃣ Show success message
+    setMessage({
+      text: "Sign up successful! Check your email to confirm your account.",
+      isError: false,
+    });
+
+    console.log("User signed up and saved in users table:", userData);
+  } catch (err) {
+    console.error("Signup error:", err);
+    setMessage({
+      text: err.message || "Database error saving new user",
+      isError: true,
+    });
+  }
+} else {
         const { data, error } = await signIn(email, password);
         if (error) throw error;
         // Supabase has now created the auth session token (JWT)
