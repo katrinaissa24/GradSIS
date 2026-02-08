@@ -77,6 +77,8 @@ export default function OnBoarding() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [majors, setMajors] = useState([]);
+  const [startingTerms, setStartingTerms] = useState([]);
+
 
 
   useEffect(() => {
@@ -93,6 +95,22 @@ export default function OnBoarding() {
 
   loadMajors();
 }, []);
+
+  useEffect(() => {
+    const loadStartingTerms = async () => {
+      const { data, error } = await supabase
+        .from("starting_terms")
+        .select("*")
+        .order("name", { ascending: true });
+
+      console.log("starting_terms:", data, error);
+
+      if (!error) setStartingTerms(data ?? []);
+    };
+
+    loadStartingTerms();
+  }, []);
+
 
   useEffect(() => {
     const signInTestUser = async () => {
@@ -119,36 +137,36 @@ export default function OnBoarding() {
     profile.startingTerm &&
     profile.startingYear;
 
-    async function saveProfile() {
+  async function saveProfile() {
+    if (!isComplete) return;
     setLoading(true);
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
       if (!user) throw new Error("Not authenticated");
 
       const payload = {
-        id: user.id,                 
-        academic_standing: profile.academicStanding,
-        major_id: profile.major,     
-        starting_term: profile.startingTerm,
-        starting_year: profile.startingYear,
-        catalog_year: profile.catalogYear,
+        major_id: profile.major,            
+        starting_term_id: profile.startingTerm,
       };
 
       const { error } = await supabase
-        .from("profiles")
-        .upsert(payload);
+        .from("users")
+        .update(payload)
+        .eq("id", user.id);
 
       if (error) throw error;
 
-      alert("Profile saved ✅");
+      alert("Saved ✅ (users table updated)");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
 
 
 
