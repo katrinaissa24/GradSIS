@@ -1,5 +1,5 @@
-import FigmaApp from "../app/App.tsx";
+import LandingPage from "./pages/LandingPage";
 
 export default function App() {
-  return <FigmaApp />;
+  return <LandingPage />;
 }
