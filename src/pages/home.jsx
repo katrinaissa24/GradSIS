@@ -1,5 +1,5 @@
-import LandingPage from "./LandingPage";
+import Landing from "../../app/App.tsx";
 
 export default function Home() {
-  return <LandingPage />;
+  return <Landing />;
 }
