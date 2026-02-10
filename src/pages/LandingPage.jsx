@@ -6,7 +6,8 @@ export default function LandingPage() {
         <nav style={{ display: "flex", gap: 14 }}>
           <a href="#features">Features</a>
           <a href="#how">How it works</a>
-          <a href="/login">Log in</a>
+          <a href="/auth">Log in</a>
+
         </nav>
       </header>
 
@@ -18,7 +19,7 @@ export default function LandingPage() {
 
         <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
           <a
-            href="/signup"
+            href="/auth"
             style={{ background: "#111", color: "#fff", padding: "12px 16px", borderRadius: 10, textDecoration: "none" }}
           >
             Sign up
