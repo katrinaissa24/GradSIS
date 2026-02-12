@@ -1,12 +1,17 @@
+import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+
 export default function LandingPage() {
+    const navigate = useNavigate();
+
   return (
+    
     <div style={{ fontFamily: "Arial, sans-serif", padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ fontWeight: 900, fontSize: 18 }}>GradSIS</div>
         <nav style={{ display: "flex", gap: 14 }}>
           <a href="#features">Features</a>
           <a href="#how">How it works</a>
-          <a href="/login">Log in</a>
         </nav>
       </header>
 
@@ -18,7 +23,7 @@ export default function LandingPage() {
 
         <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
           <a
-            href="/signup"
+            href="/auth"
             style={{ background: "#111", color: "#fff", padding: "12px 16px", borderRadius: 10, textDecoration: "none" }}
           >
             Sign up
