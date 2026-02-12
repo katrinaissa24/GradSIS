@@ -1,4 +1,3 @@
-
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Onboarding from "./onBoarding";
@@ -7,8 +6,7 @@ import Home from "./pages/home";
 import Dashboard from "./pages/dashboard";
 import LandingPage from "./pages/LandingPage";
 
-
-function App() {
+export default function App() {
   return (
     <Router>
       <Routes>
@@ -20,5 +18,3 @@ function App() {
     </Router>
   );
 }
-
-export default App;
