@@ -4,13 +4,12 @@ import Onboarding from "./onBoarding";
 import Auth from "./pages/auth";
 import Home from "./pages/home";
 import Dashboard from "./pages/dashboard";
-import LandingPage from "./pages/LandingPage";
 
 export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<Home />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/dashboard" element={<Dashboard />} />
