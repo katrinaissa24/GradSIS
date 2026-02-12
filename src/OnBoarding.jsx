@@ -70,10 +70,12 @@ export default function OnBoarding() {
   const [profile, setProfile] = useState({
     academicStanding: "",
     major: "",
-    startingTerm: "",
+    startingTerm: "",      
+    startingTermName: "",   
     startingYear: "",
     catalogYear: ""
   });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [majors, setMajors] = useState([]);
@@ -153,6 +155,8 @@ export default function OnBoarding() {
         major_id: profile.major,
         starting_term_id: profile.startingTerm,
       };
+      console.log("PAYLOAD TO UPSERT:", payload);
+
 
       const { data, error } = await supabase
         .from("users")
@@ -186,10 +190,11 @@ export default function OnBoarding() {
   label: m.name
 }));
 
-  const startingTermOptions = [
-  { value: "fall", label: "Fall" },
-  { value: "spring", label: "Spring" },
-];
+  const startingTermOptions = startingTerms.map((t) => ({
+  value: t.id,      
+  label: t.name    
+}));
+
 
 
 
@@ -230,17 +235,24 @@ export default function OnBoarding() {
             <div style={{ flex: 1 }}>
               <label style={styles.label}>Starting Term *</label>
               <CustomDropdown
-                value={profile.startingTerm}
-                onChange={(value) => {
-                  setProfile(p => ({
-                    ...p,
-                    startingTerm: value,
-                    catalogYear: p.catalogYear
-                  }));
-                }}
-                options={startingTermOptions}
-                placeholder="Select term"
-              />
+              value={profile.startingTerm}
+              onChange={(value) => {
+                const selectedTerm = startingTerms.find(t => t.id === value);
+
+                setProfile(p => ({
+                  ...p,
+                  startingTerm: value,                              // UUID
+                  startingTermName: selectedTerm.name.toLowerCase(), // "fall"/"spring"
+                  catalogYear: computeCatalogYear(
+                    selectedTerm.name.toLowerCase(),
+                    p.startingYear
+                  )
+                }));
+              }}
+              options={startingTermOptions}
+              placeholder="Select term"
+            />
+
             </div>
 
             <div style={{ flex: 1 }}>
@@ -254,7 +266,7 @@ export default function OnBoarding() {
                   setProfile(p => ({
                     ...p,
                     startingYear: year,
-                    catalogYear: computeCatalogYear(p.startingTerm, year)
+                    catalogYear: computeCatalogYear(p.startingTermName, year)
                   }));
                 }}
                 style={styles.input}
