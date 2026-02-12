@@ -5,8 +5,7 @@ import Auth from "./pages/auth";
 import Home from "./pages/home";
 import Dashboard from "./pages/dashboard";
 
-
-function App() {
+export default function App() {
   return (
     <Router>
       <Routes>
@@ -18,5 +17,3 @@ function App() {
     </Router>
   );
 }
-
-export default App;
