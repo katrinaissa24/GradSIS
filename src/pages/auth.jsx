@@ -129,7 +129,7 @@ const handleHomeClick = () => {
         navigate("/");
     };
     return (
-        <>
+        <div className="auth-page">
             <div className="left-side-container">
                 <div className="gradsis-logo">
                     GRADSIS
@@ -227,7 +227,7 @@ const handleHomeClick = () => {
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     );
 }
 
