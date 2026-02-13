@@ -6,7 +6,7 @@ export function Hero() {
   const navigate = useNavigate();
 
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-emerald-50 via-blue-50 to-white pt-20 pb-24 px-4 sm:px-6 lg:px-8">
+    <section className="relative overflow-hidden bg-gradient-to-b from-white via-slate-50 to-white pt-20 pb-24 px-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl text-center">
         <div className="space-y-8">
           <div className="space-y-6">
