@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "./services/supabase";
-
+import { useNavigate } from "react-router-dom";
 
 // Custom Dropdown Component
 function CustomDropdown({ value, onChange, options, placeholder }) {
@@ -8,12 +8,11 @@ function CustomDropdown({ value, onChange, options, placeholder }) {
 
   return (
     <div style={styles.dropdownContainer}>
-      <div
-        style={styles.dropdownHeader}
-        onClick={() => setIsOpen(!isOpen)}
-      >
+      <div style={styles.dropdownHeader} onClick={() => setIsOpen(!isOpen)}>
         <span style={value ? styles.selectedText : styles.placeholderText}>
-          {value ? options.find(opt => opt.value === value)?.label : placeholder}
+          {value
+            ? options.find((opt) => opt.value === value)?.label
+            : placeholder}
         </span>
         <svg
           width="12"
@@ -21,7 +20,7 @@ function CustomDropdown({ value, onChange, options, placeholder }) {
           viewBox="0 0 12 12"
           style={{
             transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease"
+            transition: "transform 0.2s ease",
           }}
         >
           <path fill="#047857" d="M6 9L1 4h10z" />
@@ -30,14 +29,17 @@ function CustomDropdown({ value, onChange, options, placeholder }) {
 
       {isOpen && (
         <>
-          <div style={styles.dropdownOverlay} onClick={() => setIsOpen(false)} />
+          <div
+            style={styles.dropdownOverlay}
+            onClick={() => setIsOpen(false)}
+          />
           <div style={styles.dropdownList}>
             {options.map((option) => (
               <div
                 key={option.value}
                 style={{
                   ...styles.dropdownItem,
-                  ...(value === option.value && styles.dropdownItemSelected)
+                  ...(value === option.value && styles.dropdownItemSelected),
                 }}
                 onClick={() => {
                   onChange(option.value);
@@ -67,36 +69,78 @@ function CustomDropdown({ value, onChange, options, placeholder }) {
 }
 
 export default function OnBoarding() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState({
     academicStanding: "",
     major: "",
-    startingTerm: "",      
-    startingTermName: "",   
-    startingYear: "",
-    catalogYear: ""
+    startingTerm: "",
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [majors, setMajors] = useState([]);
   const [startingTerms, setStartingTerms] = useState([]);
+  const [checkingProfile, setCheckingProfile] = useState(true);
 
+  // Check if user has already completed onboarding
+  useEffect(() => {
+    const checkExistingProfile = async () => {
+      try {
+        // Check session first
+        const {
+          data: { session },
+          error: sessionErr,
+        } = await supabase.auth.getSession();
 
+        if (sessionErr || !session) {
+          console.error("No active session:", sessionErr);
+          navigate("/auth");
+          return;
+        }
+
+        const user = session.user;
+
+        // Check if user already has major_id and starting_term_id filled
+        const { data: userData, error: fetchError } = await supabase
+          .from("users")
+          .select("major_id, starting_term_id")
+          .eq("id", user.id)
+          .single();
+
+        if (fetchError && fetchError.code !== "PGRST116") {
+          console.error("Error checking profile:", fetchError);
+        }
+
+        // If both fields are filled, redirect to dashboard
+        if (userData && userData.major_id && userData.starting_term_id) {
+          navigate("/dashboard");
+          return;
+        }
+      } catch (err) {
+        console.error("Error checking profile:", err);
+        navigate("/auth");
+      } finally {
+        setCheckingProfile(false);
+      }
+    };
+
+    checkExistingProfile();
+  }, [navigate]);
 
   useEffect(() => {
-  const loadMajors = async () => {
-    const { data, error } = await supabase
-      .from("majors")
-      .select("*")
-      .order("name", { ascending: true });
+    const loadMajors = async () => {
+      const { data, error } = await supabase
+        .from("majors")
+        .select("*")
+        .order("name", { ascending: true });
 
-    console.log("majors:", data, error);
+      console.log("majors:", data, error);
 
-    if (!error) setMajors(data ?? []);
-  };
+      if (!error) setMajors(data ?? []);
+    };
 
-  loadMajors();
-}, []);
+    loadMajors();
+  }, []);
 
   useEffect(() => {
     const loadStartingTerms = async () => {
@@ -113,96 +157,83 @@ export default function OnBoarding() {
     loadStartingTerms();
   }, []);
 
-
-  useEffect(() => {
-    const signInTestUser = async () => {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: "jaa118@mail.aub.edu",
-        password: "jaatest06",
-      });
-
-      console.log("SIGNED IN:", data, error);
-    };
-
-    signInTestUser();
-  }, []);
-
-
-  function computeCatalogYear(term, year) {
-    if (!term || !year) return "";
-    return term === "fall" ? year : year - 1;
-  }
-
   const isComplete =
-    profile.academicStanding &&
-    profile.major &&
-    profile.startingTerm &&
-    profile.startingYear;
+    profile.academicStanding && profile.major && profile.startingTerm;
 
-    async function saveProfile() {
+  async function saveProfile() {
     if (!isComplete) return;
     setLoading(true);
     setError(null);
 
     try {
-      const { data: { user }, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      if (!user) throw new Error("Not authenticated");
+      const {
+        data: { session },
+        error: sessionErr,
+      } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      if (!session) throw new Error("No active session. Please log in again.");
+
+      const user = session.user;
 
       const payload = {
-        id: user.id,                   
-        email: user.email,                
+        id: user.id,
+        email: user.email,
         major_id: profile.major,
         starting_term_id: profile.startingTerm,
       };
       console.log("PAYLOAD TO UPSERT:", payload);
 
-
       const { data, error } = await supabase
         .from("users")
-        .upsert(payload)     
+        .upsert(payload)
         .select();
 
       if (error) throw error;
 
       console.log("UPSERT users result:", data);
-      alert("Saved ✅ (users table upserted)");
+
+      // Redirect to dashboard after successful save
+      navigate("/dashboard");
     } catch (err) {
+      console.error("Save error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
 
-
-
-
-
-
   const academicStandingOptions = [
     { value: "freshman", label: "Freshman" },
     { value: "transfer", label: "Transfer" },
-    { value: "regular", label: "Regular" }
+    { value: "regular", label: "Regular" },
   ];
 
   const majorOptions = majors.map((m) => ({
-  value: m.id,
-  label: m.name
-}));
+    value: m.id,
+    label: m.name,
+  }));
 
   const startingTermOptions = startingTerms.map((t) => ({
-  value: t.id,      
-  label: t.name    
-}));
+    value: t.id,
+    label: t.name,
+  }));
 
-
-
+  // Show loading while checking profile
+  if (checkingProfile) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <p style={{ textAlign: "center", color: "#047857" }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
       <div style={styles.card}>
         {/* Header */}
-        <h1 style={styles.title}>CS Graduation Planner</h1>
+        <h1 style={styles.title}>GradSIS</h1>
         <p style={styles.subtitle}>American University of Beirut</p>
         <div style={styles.divider}></div>
 
@@ -213,7 +244,7 @@ export default function OnBoarding() {
           <CustomDropdown
             value={profile.academicStanding}
             onChange={(value) =>
-              setProfile(p => ({ ...p, academicStanding: value }))
+              setProfile((p) => ({ ...p, academicStanding: value }))
             }
             options={academicStandingOptions}
             placeholder="Select your standing"
@@ -223,63 +254,21 @@ export default function OnBoarding() {
           <label style={styles.label}>Major *</label>
           <CustomDropdown
             value={profile.major}
-            onChange={(value) =>
-              setProfile(p => ({ ...p, major: value }))
-            }
+            onChange={(value) => setProfile((p) => ({ ...p, major: value }))}
             options={majorOptions}
             placeholder="Select your major"
           />
 
-          {/* Starting Term & Year */}
-          <div style={styles.row}>
-            <div style={{ flex: 1 }}>
-              <label style={styles.label}>Starting Term *</label>
-              <CustomDropdown
-              value={profile.startingTerm}
-              onChange={(value) => {
-                const selectedTerm = startingTerms.find(t => t.id === value);
-
-                setProfile(p => ({
-                  ...p,
-                  startingTerm: value,                              // UUID
-                  startingTermName: selectedTerm.name.toLowerCase(), // "fall"/"spring"
-                  catalogYear: computeCatalogYear(
-                    selectedTerm.name.toLowerCase(),
-                    p.startingYear
-                  )
-                }));
-              }}
-              options={startingTermOptions}
-              placeholder="Select term"
-            />
-
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={styles.label}>Starting Year *</label>
-              <input
-                type="number"
-                placeholder="e.g., 2026"
-                value={profile.startingYear}
-                onChange={e => {
-                  const year = Number(e.target.value);
-                  setProfile(p => ({
-                    ...p,
-                    startingYear: year,
-                    catalogYear: computeCatalogYear(p.startingTermName, year)
-                  }));
-                }}
-                style={styles.input}
-              />
-            </div>
-          </div>
-
-          {/* Catalog Year */}
-          {profile.catalogYear && (
-            <p style={styles.catalogText}>
-              Catalog Year: <strong>{profile.catalogYear}</strong>
-            </p>
-          )}
+          {/* Starting Term (with year included) */}
+          <label style={styles.label}>Starting Term *</label>
+          <CustomDropdown
+            value={profile.startingTerm}
+            onChange={(value) =>
+              setProfile((p) => ({ ...p, startingTerm: value }))
+            }
+            options={startingTermOptions}
+            placeholder="Select starting term"
+          />
 
           {/* Error */}
           {error && <p style={styles.error}>{error}</p>}
@@ -290,7 +279,7 @@ export default function OnBoarding() {
             disabled={!isComplete || loading}
             style={{
               ...styles.button,
-              ...((!isComplete || loading) && styles.buttonDisabled)
+              ...((!isComplete || loading) && styles.buttonDisabled),
             }}
           >
             {loading ? "Saving..." : "Continue to Planner"}
@@ -311,7 +300,7 @@ const styles = {
     background: "linear-gradient(135deg, #ecfdf5, #d1fae5)",
     fontFamily: "Arial, sans-serif",
     padding: 0,
-    margin: 0
+    margin: 0,
   },
   card: {
     width: "100%",
@@ -319,45 +308,61 @@ const styles = {
     backgroundColor: "white",
     borderRadius: 16,
     padding: 30,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.1)"
+    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
   },
-  title: { color: "#047857", fontSize: 26, fontWeight: "700", margin: 0, textAlign: "center" },
-  subtitle: { color: "#065f46", fontSize: 14, textAlign: "center", marginTop: 5, marginBottom: 15 },
-  divider: { width: 50, height: 3, backgroundColor: "#10b981", margin: "10px auto 20px", borderRadius: 2 },
+  title: {
+    color: "#047857",
+    fontSize: 26,
+    fontWeight: "700",
+    margin: 0,
+    textAlign: "center",
+  },
+  subtitle: {
+    color: "#065f46",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 5,
+    marginBottom: 15,
+  },
+  divider: {
+    width: 50,
+    height: 3,
+    backgroundColor: "#10b981",
+    margin: "10px auto 20px",
+    borderRadius: 2,
+  },
   form: { display: "flex", flexDirection: "column", gap: 15 },
   label: { fontSize: 14, fontWeight: 600, color: "#374151" },
-  input: { 
-    padding: 12, 
-    borderRadius: 8, 
-    border: "1px solid #d1d5db", 
-    fontSize: 14, 
+  input: {
+    padding: 12,
+    borderRadius: 8,
+    border: "1px solid #d1d5db",
+    fontSize: 14,
     outline: "none",
     transition: "all 0.2s ease",
     width: "100%",
     boxSizing: "border-box",
     backgroundColor: "white",
-    color: "#1f2937"
+    color: "#1f2937",
   },
-  row: { display: "flex", gap: 15 },
-  catalogText: { fontSize: 14, fontWeight: 600, color: "#047857", marginTop: 10 },
   error: { color: "#dc2626", fontSize: 13, marginTop: 5 },
-  button: { 
-    padding: 14, 
-    borderRadius: 8, 
-    backgroundColor: "#047857", 
-    color: "white", 
-    border: "none", 
-    fontWeight: 600, 
-    cursor: "pointer", 
+  button: {
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: "#047857",
+    color: "white",
+    border: "none",
+    fontWeight: 600,
+    cursor: "pointer",
     marginTop: 15,
-    transition: "all 0.2s ease"
+    transition: "all 0.2s ease",
   },
   buttonDisabled: { backgroundColor: "#9ca3af", cursor: "not-allowed" },
 
   // Custom Dropdown Styles
   dropdownContainer: {
     position: "relative",
-    width: "100%"
+    width: "100%",
   },
   dropdownHeader: {
     display: "flex",
@@ -370,13 +375,13 @@ const styles = {
     cursor: "pointer",
     fontSize: 14,
     transition: "all 0.2s ease",
-    userSelect: "none"
+    userSelect: "none",
   },
   selectedText: {
-    color: "#1f2937"
+    color: "#1f2937",
   },
   placeholderText: {
-    color: "#9ca3af"
+    color: "#9ca3af",
   },
   dropdownOverlay: {
     position: "fixed",
@@ -384,7 +389,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999
+    zIndex: 999,
   },
   dropdownList: {
     position: "absolute",
@@ -397,7 +402,7 @@ const styles = {
     boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
     zIndex: 1000,
     maxHeight: "200px",
-    overflowY: "auto"
+    overflowY: "auto",
   },
   dropdownItem: {
     padding: "12px 16px",
@@ -406,11 +411,11 @@ const styles = {
     color: "#1f2937",
     backgroundColor: "white",
     transition: "all 0.15s ease",
-    userSelect: "none"
+    userSelect: "none",
   },
   dropdownItemSelected: {
     backgroundColor: "#047857",
     color: "white",
-    fontWeight: 600
-  }
+    fontWeight: 600,
+  },
 };
