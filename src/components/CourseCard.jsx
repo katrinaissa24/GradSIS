@@ -2,18 +2,26 @@ import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 
-export default function CourseCard({ course, refresh }) {
+export default function CourseCard({
+  course,
+  refresh,
+  semesterStatus,
+  updateCourse,
+}) {
   function onDragStart(e) {
     e.dataTransfer.setData("courseId", course.id);
   }
 
   async function updateField(field, value) {
+    updateCourse(course.id, field, value);
     await supabase
       .from("user_courses")
       .update({ [field]: value })
       .eq("id", course.id);
     refresh();
   }
+
+  const canEditGrade = semesterStatus === "previous";
 
   return (
     <div
@@ -47,18 +55,28 @@ export default function CourseCard({ course, refresh }) {
           style={{ padding: 4, borderRadius: 6 }}
         >
           {attributeOptions.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
           ))}
         </select>
 
         <select
           value={course.grade || ""}
           onChange={(e) => updateField("grade", e.target.value)}
-          style={{ padding: 4, borderRadius: 6 }}
+          disabled={!canEditGrade}
+          style={{
+            padding: 4,
+            borderRadius: 6,
+            opacity: canEditGrade ? 1 : 0.5,
+            cursor: canEditGrade ? "pointer" : "not-allowed",
+          }}
         >
           <option value="">Grade</option>
           {gradeOptions.map((g) => (
-            <option key={g} value={g}>{g}</option>
+            <option key={g} value={g}>
+              {g}
+            </option>
           ))}
         </select>
       </div>
