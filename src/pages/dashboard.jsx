@@ -13,6 +13,25 @@ export default function Dashboard() {
     initialize();
   }, []);
 
+  const PASSING_GRADES = new Set(["A+", "A", "A-","B+", "B", "B-","C+", "C", "C-","D+", "D", "D-"]);
+
+  function calcCredits(semesters) {
+    let total = 0;
+    let completed = 0;
+
+    for (const sem of semesters) {
+      for (const uc of sem.user_courses || []) {
+        const credits = uc?.courses?.credits ?? 0;
+        total += credits;
+
+        const g = uc?.grade;
+        if (g && PASSING_GRADES.has(g)) completed += credits;
+      }
+    }
+
+    return { completed, total };
+  }
+
   async function initialize() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -162,6 +181,13 @@ export default function Dashboard() {
       })),
     );
   }
+
+  const { completed } = calcCredits(semesters);
+  const total = 120;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
+  const safePercent = Math.min(100, Math.max(0, percent));
+  const remaining = Math.max(0, total - completed);
+
   return (
     <div
       style={{
@@ -171,7 +197,53 @@ export default function Dashboard() {
         color: "#111",
       }}
     >
-      <h1 style={{ marginBottom: 12 }}>Dashboard</h1>
+        <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+          gap: 12,
+        }}
+      >
+        <h1 style={{ margin: 0 }}>Dashboard</h1>
+
+        <div
+          style={{
+            background: "white",
+            borderRadius: 12,
+            padding: "10px 14px",
+            minWidth: 260,
+            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+            border: "1px solid #eee",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+            <span style={{ fontWeight: 600 }}>Credits</span>
+            <span>{safePercent}%</span>
+          </div>
+
+          <div style={{ marginTop: 4, fontSize: 12, color: "#666" }}>
+            {remaining} credits remaining
+          </div>
+
+          <div style={{ height: 10, width: "100%", background: "#eee", borderRadius: 999 }}>
+            <div
+              style={{
+                height: 10,
+                width: `${safePercent}%`,
+                background: "#111",
+                borderRadius: 999,
+                transition: "width 200ms",
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+            <b>{completed}</b> / {total} credits completed
+          </div>
+        </div>
+      </div>
       <p>Welcome {authUser?.email}</p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
