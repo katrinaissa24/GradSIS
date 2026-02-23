@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
-import { useNavigate } from "react-router-dom";
 import SemesterCard from "../components/SemesterCard";
+import { useNavigate } from "react-router-dom";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import CustomDragLayer from "../components/CustomDragLayer";
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -9,131 +12,52 @@ export default function Dashboard() {
   const [semesters, setSemesters] = useState([]);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    initialize();
-  }, []);
+  const PASSING_GRADES = new Set([
+    "A+", "A", "A-","B+","B","B-","C+","C","C-","D+","D","D-"
+  ]);
+
+  function calcCredits(semesters) {
+    let total = 0, completed = 0;
+    for (const sem of semesters) {
+      for (const uc of sem.user_courses || []) {
+        const credits = uc?.courses?.credits ?? 0;
+        total += credits;
+        if (uc?.grade && PASSING_GRADES.has(uc.grade)) completed += credits;
+      }
+    }
+    return { completed, total };
+  }
 
   async function initialize() {
+    setLoading(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
+      if (!sessionData?.session) {
         navigate("/auth");
         return;
       }
-      const userId = sessionData.session.user.id;
+
       setAuthUser(sessionData.session.user);
 
-      const { data: userRow } = await supabase
-        .from("users")
-        .select("major_id, starting_term_id")
-        .eq("id", userId)
-        .single();
+      const userId = sessionData.session.user.id;
 
-      const { data: startingTerm } = await supabase
-        .from("starting_terms")
-        .select("template_id, major_id")
-        .eq("id", userRow.starting_term_id)
-        .single();
-
-      const templateId = startingTerm.template_id;
-
-      const { data: templateSemesters } = await supabase
-        .from("template_semesters")
-        .select("*")
-        .eq("template_id", templateId)
-        .order("semester_number", { ascending: true });
-
-      const { data: existingUserSemesters } = await supabase
+      const { data: userSemesters } = await supabase
         .from("user_semesters")
         .select("*")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .order("semester_number", { ascending: true });
 
-      let userSemesters = existingUserSemesters;
-      if (!existingUserSemesters || existingUserSemesters.length === 0) {
-        const newUserSemesters = templateSemesters.map((sem) => ({
-          user_id: userId,
-          semester_number: sem.semester_number,
-          name: `Semester ${sem.semester_number}`,
-          status: "future",
-        }));
+      const semesterIds = userSemesters.map((s) => s.id);
 
-        const { data: created, error: insertError } = await supabase
-          .from("user_semesters")
-          .insert(newUserSemesters)
-          .select();
-
-        if (insertError) {
-          console.error("Insert error:", insertError);
-          userSemesters = [];
-        } else {
-          userSemesters = created;
-        }
-      }
-
-      console.log("userSemesters:", userSemesters);
-
-      // Create user_courses if they don't exist
-      const userSemesterIds = userSemesters.map((s) => s.id);
-      const { data: existingUserCourses } = await supabase
-        .from("user_courses")
-        .select("*")
-        .in("semester_id", userSemesterIds);
-
-      if (!existingUserCourses || existingUserCourses.length === 0) {
-        const semesterIds = templateSemesters.map((s) => s.id);
-        const { data: templateCourses } = await supabase
-          .from("template_courses")
-          .select("id, template_semester_id, course_id")
-          .in("template_semester_id", semesterIds);
-
-        const newUserCourses = [];
-        templateCourses.forEach((tc) => {
-          const templateSem = templateSemesters.find(
-            (ts) => ts.id === tc.template_semester_id,
-          );
-          const userSem = userSemesters.find(
-            (us) => us.semester_number === templateSem?.semester_number,
-          );
-          if (userSem) {
-            newUserCourses.push({
-              user_id: userId,
-              semester_id: userSem.id,
-              course_id: tc.course_id,
-              grade: null,
-              attribute: "Major Course",
-            });
-          }
-        });
-
-        await supabase.from("user_courses").insert(newUserCourses);
-      }
-
-      // Fetch actual user_courses with course details
       const { data: userCourses } = await supabase
         .from("user_courses")
-        .select("*, courses(id, name, code, credits)")
-        .in("semester_id", userSemesterIds);
+        .select("*, courses(id,name,code,credits)")
+        .in("semester_id", semesterIds);
 
-      console.log("userCourses:", userCourses);
-
-      const formattedSemesters = templateSemesters.map((sem) => {
-        const userSem = userSemesters?.find(
-          (us) => us.semester_number === sem.semester_number,
-        );
-
-        return {
-          id: userSem?.id || sem.id,
-          template_semester_id: sem.id,
-          name: `Semester ${sem.semester_number}`,
-          semester_number: sem.semester_number,
-          status: userSem?.status || "future",
-          user_id: userId,
-          user_courses:
-            userCourses?.filter((uc) => uc.semester_id === userSem?.id) || [],
-        };
-      });
-
-      console.log("formattedSemesters:", formattedSemesters);
+      const formattedSemesters = userSemesters.map((sem) => ({
+        ...sem,
+        user_courses: userCourses.filter((c) => c.semester_id === sem.id),
+      }));
 
       setSemesters(formattedSemesters);
       setLoading(false);
@@ -143,48 +67,102 @@ export default function Dashboard() {
     }
   }
 
-  if (loading) return <div style={{ padding: 20 }}>Loading...</div>;
+  useEffect(() => { initialize(); }, []);
 
-  function updateSemesterStatus(semesterId, newStatus) {
-    setSemesters((prevSemesters) =>
-      prevSemesters.map((sem) =>
-        sem.id === semesterId ? { ...sem, status: newStatus } : sem,
-      ),
+  function updateSemesterStatus(id, newStatus) {
+    setSemesters(prev =>
+      prev.map(s => s.id === id ? { ...s, status: newStatus } : s)
     );
   }
+
   function updateCourseGrade(courseId, field, value) {
-    setSemesters((prevSemesters) =>
-      prevSemesters.map((sem) => ({
+    setSemesters(prev =>
+      prev.map(sem => ({
         ...sem,
-        user_courses: sem.user_courses.map((course) =>
-          course.id === courseId ? { ...course, [field]: value } : course,
+        user_courses: sem.user_courses.map(c =>
+          c.id === courseId ? { ...c, [field]: value } : c
         ),
-      })),
+      }))
     );
   }
-  return (
-    <div
-      style={{
-        padding: 20,
-        background: "#f9f9f9",
-        minHeight: "100vh",
-        color: "#111",
-      }}
-    >
-      <h1 style={{ marginBottom: 12 }}>Dashboard</h1>
-      <p>Welcome {authUser?.email}</p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {semesters.map((sem) => (
-          <SemesterCard
-            key={sem.id}
-            semester={sem}
-            refresh={initialize}
-            updateStatus={updateSemesterStatus}
-            updateCourse={updateCourseGrade}
-          />
-        ))}
+  function moveCourse(courseId, fromSemesterId, toSemesterId) {
+  setSemesters(prev => {
+    let movedCourse = null;
+
+    const updated = prev.map(sem => {
+      if (sem.id === fromSemesterId) {
+        const remaining = sem.user_courses.filter(c => {
+          if (c.id === courseId) {
+            movedCourse = c;
+            return false;
+          }
+          return true;
+        });
+        return { ...sem, user_courses: remaining };
+      }
+      return sem;
+    });
+
+    return updated.map(sem => {
+      if (sem.id === toSemesterId && movedCourse) {
+        return {
+          ...sem,
+          user_courses: [...sem.user_courses, { ...movedCourse, semester_id: toSemesterId }]
+        };
+      }
+      return sem;
+    });
+  });
+}
+
+  const { completed } = calcCredits(semesters);
+  const total = 120;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
+  const safePercent = Math.min(100, Math.max(0, percent));
+  const remaining = Math.max(0, total - completed);
+
+if (loading) {
+  return <div style={{ padding: 20 }}>Initializing...</div>;
+}
+  return (
+    <DndProvider backend={HTML5Backend}>
+      <CustomDragLayer />
+      <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
+
+        {/* NAV BAR */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px 24px",
+          backgroundColor: "#fff",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          marginBottom: 24,
+          borderRadius: "0 0 12px 12px",
+        }}>
+          <h1 style={{ fontSize: 26, margin: 0 }}>Dashboard</h1>
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 14, textAlign: "right" }}>
+            <div style={{ fontWeight: 600 }}>Welcome {authUser?.name || authUser?.email}</div>
+            <div style={{ marginTop: 4, fontSize: 13, color: "#555" }}>
+              Total Credits Completed: {completed} / {total}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {semesters.map(sem => (
+            
+            <SemesterCard
+  key={sem.id}
+  semester={sem}
+  updateStatus={updateSemesterStatus}
+  updateCourse={updateCourseGrade}
+  moveCourse={moveCourse}
+/>
+          ))}
+        </div>
       </div>
-    </div>
+    </DndProvider>
   );
 }
