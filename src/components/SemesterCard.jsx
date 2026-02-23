@@ -3,19 +3,24 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 
-export default function SemesterCard({ semester, updateStatus, updateCourse, refresh }) {
+export default function SemesterCard({ semester, updateStatus, updateCourse, moveCourse }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
 
+  // Drop zone for courses
   const [{ isOver }, drop] = useDrop({
     accept: "COURSE",
     drop: async (item) => {
-      if (item.course.semester_id === semester.id) return;
+      if (item.course.semester_id === semester.id) return; // ignore same semester
+
+      // Update local state in Dashboard
+      moveCourse(item.course.id, item.course.semester_id, semester.id);
+
+      // Update backend
       await supabase
         .from("user_courses")
         .update({ semester_id: semester.id })
         .eq("id", item.course.id);
-      refresh();
     },
     collect: (monitor) => ({
       isOver: monitor.isOver(),
@@ -77,14 +82,13 @@ export default function SemesterCard({ semester, updateStatus, updateCourse, ref
         })}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, transition: "all 0.2s ease" }}>
         {semester.user_courses.map((course) => (
           <CourseCard
             key={course.id}
             course={course}
             semesterStatus={semester.status}
             updateCourse={updateCourse}
-            refresh={refresh}
           />
         ))}
       </div>

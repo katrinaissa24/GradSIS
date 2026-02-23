@@ -4,6 +4,7 @@ import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import CustomDragLayer from "../components/CustomDragLayer";
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -85,16 +86,48 @@ export default function Dashboard() {
     );
   }
 
+  function moveCourse(courseId, fromSemesterId, toSemesterId) {
+  setSemesters(prev => {
+    let movedCourse = null;
+
+    const updated = prev.map(sem => {
+      if (sem.id === fromSemesterId) {
+        const remaining = sem.user_courses.filter(c => {
+          if (c.id === courseId) {
+            movedCourse = c;
+            return false;
+          }
+          return true;
+        });
+        return { ...sem, user_courses: remaining };
+      }
+      return sem;
+    });
+
+    return updated.map(sem => {
+      if (sem.id === toSemesterId && movedCourse) {
+        return {
+          ...sem,
+          user_courses: [...sem.user_courses, { ...movedCourse, semester_id: toSemesterId }]
+        };
+      }
+      return sem;
+    });
+  });
+}
+
   const { completed } = calcCredits(semesters);
   const total = 120;
   const percent = total ? Math.round((completed / total) * 100) : 0;
   const safePercent = Math.min(100, Math.max(0, percent));
   const remaining = Math.max(0, total - completed);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading...</div>;
-
+if (loading) {
+  return <div style={{ padding: 20 }}>Initializing...</div>;
+}
   return (
     <DndProvider backend={HTML5Backend}>
+      <CustomDragLayer />
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
 
         {/* NAV BAR */}
@@ -119,13 +152,14 @@ export default function Dashboard() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {semesters.map(sem => (
+            
             <SemesterCard
-              key={sem.id}
-              semester={sem}
-              updateStatus={updateSemesterStatus}
-              updateCourse={updateCourseGrade}
-              refresh={initialize}
-            />
+  key={sem.id}
+  semester={sem}
+  updateStatus={updateSemesterStatus}
+  updateCourse={updateCourseGrade}
+  moveCourse={moveCourse}
+/>
           ))}
         </div>
       </div>
