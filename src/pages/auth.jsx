@@ -216,11 +216,13 @@ const AuthPage = () => {
           </div>
 
           {action === "Sign Up" ? null : (
-            <div className="forgot-password">
-              Forgot Password? <span>Click here!</span>
-            </div>
-          )}
-
+  <div className="forgot-password">
+    Forgot Password?{" "}
+    <span onClick={() => navigate("/resetPass")}>
+      Click here!
+    </span>
+  </div>
+)}
           <div className="submit-container">
             <div className="submit" onClick={handleSubmit}>
               {loading ? "Please wait..." : "Submit"}

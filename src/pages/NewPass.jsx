@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from "react";
 import { supabase } from "../services/supabase";
 import { useNavigate } from "react-router-dom";
-import "./NewPass.css"
+import "./NewPass.css";
+
 export default function NewPassword() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -12,20 +14,32 @@ export default function NewPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
+  // Verify that Supabase created a recovery session for this link.
   useEffect(() => {
-    // Check if we have the recovery token in the URL
-    const hash = window.location.hash;
-    if (!hash || !hash.includes('type=recovery')) {
-      setMessage({ 
-        text: "Invalid or expired reset link. Please request a new one.", 
-        isError: true 
-      });
-      
-      // Redirect to reset password page after 3 seconds
-      setTimeout(() => {
-        navigate("/resetPass");
-      }, 3000);
-    }
+    let isMounted = true;
+
+    const checkRecoverySession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      if (error || !data?.session) {
+        setMessage({
+          text: "Invalid or expired reset link. Please request a new one.",
+          isError: true,
+        });
+
+        // Redirect to reset password page after 3 seconds
+        setTimeout(() => {
+          navigate("/resetPass");
+        }, 3000);
+      }
+    };
+
+    checkRecoverySession();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigate]);
 
   const validatePassword = (pass) => {

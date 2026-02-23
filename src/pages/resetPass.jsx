@@ -10,10 +10,15 @@ export default function ResetPassword() {
   const navigate = useNavigate();
 
   const handleResetPassword = async () => {
+    if (!email.trim()) {
+      setMessage({ text: "Please enter your email.", isError: true });
+      return;
+    }
+
     setLoading(true);
     setMessage({ text: "", isError: false });
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/NewPass`,
     });
 
