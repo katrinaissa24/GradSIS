@@ -1,16 +1,31 @@
+import { useRef } from "react";
+import { useDrag, useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 
-export default function CourseCard({
-  course,
-  refresh,
-  semesterStatus,
-  updateCourse,
-}) {
-  function onDragStart(e) {
-    e.dataTransfer.setData("courseId", course.id);
-  }
+export default function CourseCard({ course, semesterStatus, updateCourse, refresh }) {
+  const canEditGrade = semesterStatus === "previous";
+  const ref = useRef(null);
+
+  // Drag
+  const [{ isDragging }, drag] = useDrag({
+    type: "COURSE",
+    item: { id: course.id, course },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  // Drop placeholder (needed if we implement reordering later)
+  const [, drop] = useDrop({
+    accept: "COURSE",
+    hover: (dragged) => {
+      if (dragged.id === course.id) return;
+    },
+  });
+
+  drag(drop(ref));
 
   async function updateField(field, value) {
     updateCourse(course.id, field, value);
@@ -21,22 +36,20 @@ export default function CourseCard({
     refresh();
   }
 
-  const canEditGrade = semesterStatus === "previous";
-
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
+      ref={ref}
       style={{
-        background: "#f1f1f1",
         padding: 12,
         borderRadius: 10,
+        background: "#fff",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        gap: 12,
-        fontSize: 14,
+        opacity: isDragging ? 0.5 : 1,
         cursor: "grab",
+        transition: "transform 0.2s ease",
       }}
     >
       <div style={{ flex: 1 }}>
@@ -55,9 +68,7 @@ export default function CourseCard({
           style={{ padding: 4, borderRadius: 6 }}
         >
           {attributeOptions.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
+            <option key={opt} value={opt}>{opt}</option>
           ))}
         </select>
 
@@ -74,9 +85,7 @@ export default function CourseCard({
         >
           <option value="">Grade</option>
           {gradeOptions.map((g) => (
-            <option key={g} value={g}>
-              {g}
-            </option>
+            <option key={g} value={g}>{g}</option>
           ))}
         </select>
       </div>
