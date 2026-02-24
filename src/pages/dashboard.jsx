@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
+import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
+
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -167,6 +169,13 @@ export default function Dashboard() {
     });
   });
 }
+  const allCourses = semesters.flatMap((s) => s.user_courses || []);
+
+  const totalGPA = calculateSemesterGPA(allCourses);
+  const totalHours = calculateCredits(allCourses);
+
+  
+
 
   const { completed } = calcCredits(semesters);
   const total = 120;
@@ -236,12 +245,25 @@ if (loading) {
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", fontSize: 14, textAlign: "right" }}>
-            <div style={{ fontWeight: 600 }}>Welcome {authUser?.name || authUser?.email}</div>
-            <div style={{ marginTop: 4, fontSize: 13, color: "#555" }}>
-              Total Credits Completed: {completed} / {total}
-            </div>
-          </div>
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 14, textAlign: "right", gap: 6 }}>
+  <div style={{ fontWeight: 600 }}>Welcome {authUser?.name || authUser?.email}</div>
+
+  <div style={{ fontSize: 13, color: "#555" }}>
+    Total GPA: <b style={{ color: "#111" }}>{totalGPA}</b>
+  </div>
+
+  <div style={{ fontSize: 13, color: "#555" }}>
+    Total Hours: <b style={{ color: "#111" }}>{totalHours}</b>
+  </div>
+
+  
+
+
+
+  <div style={{ fontSize: 13, color: "#555" }}>
+    Credits Completed: <b style={{ color: "#111" }}>{completed}</b> / {total}
+  </div>
+</div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
