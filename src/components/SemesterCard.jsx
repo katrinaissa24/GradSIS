@@ -37,7 +37,7 @@ export default function SemesterCard({ semester, updateStatus, updateCourse, mov
     <div
       ref={drop}
       style={{
-        width: "85%",
+        width: "60%",
         margin: "0 auto",
         background: "#fefefe",
         borderRadius: 12,
