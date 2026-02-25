@@ -14,6 +14,10 @@ export default function Dashboard() {
   const [semesters, setSemesters] = useState([]);
   const navigate = useNavigate();
 
+  async function handleSignOut() {
+  await supabase.auth.signOut();
+  navigate("/auth");
+}
   const PASSING_GRADES = new Set([
     "A+", "A", "A-","B+","B","B-","C+","C","C-","D+","D","D-"
   ]);
@@ -206,6 +210,21 @@ if (loading) {
           borderRadius: "0 0 12px 12px",
         }}>
           <h1 style={{ fontSize: 26, margin: 0 }}>Dashboard</h1>
+<div
+  onClick={handleSignOut}
+  style={{
+    marginTop: 8,
+    padding: "6px 14px",
+    borderRadius: 8,
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+    fontSize: 14,
+    display: "inline-block",
+  }}
+>
+  Sign Out
+</div>
 
           <div
             style={{
