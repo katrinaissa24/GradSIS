@@ -226,43 +226,7 @@ if (loading) {
   Sign Out
 </div>
 
-          <div
-            style={{
-              background: "white",
-              borderRadius: 14,
-              padding: 16,
-              border: "1px solid #eee",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              margin: "0 24px 16px 24px",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>Electives Tracker</h3>
-              <div style={{ fontSize: 13, color: "#666" }}>
-                {electivesRemainingTotal} credits remaining
-              </div>
-            </div>
 
-            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {electiveRows.map((r) => (
-                <div key={r.bucket} style={{ border: "1px solid #f0f0f0", borderRadius: 12, padding: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ fontWeight: 600 }}>{r.bucket}</span>
-                    <span>{r.pct}%</span>
-                  </div>
-
-                  <div style={{ height: 8, background: "#eee", borderRadius: 999, marginTop: 8 }}>
-                    <div style={{ height: 8, width: `${r.pct}%`, background: "#111", borderRadius: 999 }} />
-                  </div>
-
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
-                    <b>{r.earned}</b> / {r.required} credits
-                    <span style={{ color: "#666" }}> · {r.remaining} left</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
           <div style={{ display: "flex", flexDirection: "column", fontSize: 14, textAlign: "right", gap: 6 }}>
   <div style={{ fontWeight: 600 }}>Welcome {authUser?.name || authUser?.email}</div>
@@ -285,18 +249,77 @@ if (loading) {
 </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {semesters.map(sem => (
-            
-            <SemesterCard
-  key={sem.id}
-  semester={sem}
-  updateStatus={updateSemesterStatus}
-  updateCourse={updateCourseGrade}
-  moveCourse={moveCourse}
-/>
-          ))}
-        </div>
+        <div
+  style={{
+    display: "flex",
+    gap: 24,
+    alignItems: "flex-start",
+    padding: "0 24px 24px 24px",
+  }}
+>
+  {/* LEFT SIDE — SEMESTERS */}
+  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
+    {semesters.map((sem) => (
+      <SemesterCard
+        key={sem.id}
+        semester={sem}
+        refresh={initialize}
+        updateStatus={updateSemesterStatus}
+        updateCourse={updateCourseGrade}
+        moveCourse={moveCourse}
+      />
+    ))}
+  </div>
+
+  {/* RIGHT SIDE — ELECTIVES TRACKER */}
+  <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
+    <div
+      style={{
+        background: "white",
+        borderRadius: 14,
+        padding: 14,
+        border: "1px solid #eee",
+        boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
+        <span style={{ fontSize: 12, color: "#666" }}>
+          {electivesRemainingTotal} left
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {electiveRows.map((r) => (
+          <div
+            key={r.bucket}
+            style={{
+              border: "1px solid #f0f0f0",
+              borderRadius: 10,
+              padding: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+              <span style={{ fontWeight: 600 }}>{r.bucket}</span>
+              <span>{r.earned}/{r.required}</span>
+            </div>
+
+            <div style={{ height: 6, background: "#eee", borderRadius: 999, marginTop: 6 }}>
+              <div
+                style={{
+                  height: 6,
+                  width: `${r.pct}%`,
+                  background: "#111",
+                  borderRadius: 999,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
       </div>
     </DndProvider>
   );
