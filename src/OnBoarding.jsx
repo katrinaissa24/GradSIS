@@ -160,47 +160,102 @@ export default function OnBoarding() {
   const isComplete =
     profile.academicStanding && profile.major && profile.startingTerm;
 
-  async function saveProfile() {
-    if (!isComplete) return;
-    setLoading(true);
-    setError(null);
 
-    try {
-      const {
-        data: { session },
-        error: sessionErr,
-      } = await supabase.auth.getSession();
-      if (sessionErr) throw sessionErr;
-      if (!session) throw new Error("No active session. Please log in again.");
+async function saveProfile() {
+  if (!isComplete) return;
+  setLoading(true);
+  setError(null);
 
-      const user = session.user;
+  try {
+    // 1️⃣ Get current session and user
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("No active session. Please log in again.");
+    const user = session.user;
 
-      const payload = {
-        id: user.id,
-        email: user.email,
-        major_id: profile.major,
-        starting_term_id: profile.startingTerm,
-      };
-      console.log("PAYLOAD TO UPSERT:", payload);
+    // 2️⃣ Upsert user profile with major and starting term
+    await supabase.from("users").upsert({
+      id: user.id,
+      major_id: profile.major,
+      starting_term_id: profile.startingTerm,
+    });
 
-      const { data, error } = await supabase
-        .from("users")
-        .upsert(payload)
-        .select();
+    // 3️⃣ Fetch starting term and template
+    const { data: startingTerm } = await supabase
+      .from("starting_terms")
+      .select("template_id, name")
+      .eq("id", profile.startingTerm)
+      .single();
+    if (!startingTerm) throw new Error("Starting term not found");
 
-      if (error) throw error;
+    const templateId = startingTerm.template_id;
+const [startSemesterName, academicYear] = startingTerm.name.split(" ");
+let [startYear, endYear] = academicYear.split("-").map(Number);
 
-      console.log("UPSERT users result:", data);
+    // 4️⃣ Fetch template semesters
+    const { data: templateSemesters } = await supabase
+      .from("template_semesters")
+      .select("*")
+      .eq("template_id", templateId);
+    if (!templateSemesters?.length) throw new Error("No template semesters found");
 
-      // Redirect to dashboard after successful save
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("Save error:", err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    // 5️⃣ Generate user_semesters with dynamic names
+const semesterOrder = ["Fall", "Spring", "Summer"];
+const startIndex = semesterOrder.indexOf(startSemesterName);
+
+const userSemesters = templateSemesters.map((ts, idx) => {
+  const orderIndex = startIndex + idx;
+  const semName = semesterOrder[orderIndex % 3];
+
+  // Academic year increases AFTER Summer
+  const yearOffset = Math.floor(orderIndex / 3);
+  const currentStartYear = startYear + yearOffset;
+  const currentEndYear = endYear + yearOffset;
+
+  return {
+    user_id: user.id,
+    semester_number: ts.semester_number,
+    name: `${semName} ${currentStartYear}-${currentEndYear}`,
+  };
+});
+
+    // 6️⃣ Insert user_semesters
+    const { data: insertedSemesters } = await supabase
+      .from("user_semesters")
+      .insert(userSemesters)
+      .select();
+
+    // 7️⃣ Copy template_courses into user_courses
+    for (const ts of templateSemesters) {
+      const { data: templateCourses } = await supabase
+        .from("template_courses")
+        .select("course_id")
+        .eq("template_semester_id", ts.id);
+
+      const userSemester = insertedSemesters.find(
+        (us) => us.semester_number === ts.semester_number
+      );
+      if (!userSemester) continue;
+
+      const userCourses = templateCourses.map((tc, idx) => ({
+        user_id: user.id,
+        semester_id: userSemester.id,
+        course_id: tc.course_id,
+        attribute: "Elective", // adjust if needed
+        order_index: idx,
+      }));
+
+      await supabase.from("user_courses").insert(userCourses);
     }
+
+    // ✅ Finished
+    navigate("/dashboard");
+  } catch (err) {
+    console.error("Save profile error:", err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
   }
+}
 
   const academicStandingOptions = [
     { value: "freshman", label: "Freshman" },

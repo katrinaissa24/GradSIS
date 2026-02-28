@@ -16,6 +16,10 @@ const AuthPage = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+const [selectedMajorId, setSelectedMajorId] = useState(null);
+const [selectedTermId, setSelectedTermId] = useState(null);
+
   useEffect(() => {
     const checkUser = async () => {
       const {
@@ -55,6 +59,14 @@ const AuthPage = () => {
             await supabase.auth.signUp({
               email,
               password,
+              options: {
+    data: {
+      template_id: selectedTemplateId,   
+      major_id: selectedMajorId,        
+      starting_term_id: selectedTermId,  
+    }
+  }
+
             });
 
           if (signUpError) throw signUpError;
