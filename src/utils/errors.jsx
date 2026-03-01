@@ -3,27 +3,18 @@ import React, { useState, useEffect, useCallback } from "react";
 import "./errors.css";
 
 export default function Prerequisite({ userId, selectedSemesterId, onCourseRegistered }) {
-  const [courses, setCourses] = useState([]);
   const [userCourseIds, setUserCourseIds] = useState([]);
-  const [message, setMessage] = useState(null); 
+  const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [semesterCredits, setSemesterCredits] = useState(0);
   const [creditWarning, setCreditWarning] = useState('');
-  const [filteredCourses, setFilteredCourses] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [registering, setRegistering] = useState(false);
+  const [codePrefix, setCodePrefix] = useState('');
+  const [courseNumber, setCourseNumber] = useState('');
+  const [selectedCourse, setSelectedCourse] = useState(null);
 
   const MIN_CREDITS = 12;
   const MAX_CREDITS = 17;
-
-  const fetchCourses = useCallback(async () => {
-    const { data, error } = await supabase.from("courses").select("*");
-    if (error) { console.error("fetchCourses:", error); return; }
-    const uniqueCourses = data.filter(
-      (course, index, self) => index === self.findIndex(c => c.code === course.code)
-    );
-    setCourses(uniqueCourses);
-  }, []);
 
   const fetchUserCourses = useCallback(async () => {
     if (!userId) return;
@@ -40,7 +31,7 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
       .from('user_courses').select('course_id')
       .eq('user_id', userId).eq('semester_id', semesterId).neq('status', 'dropped');
     if (enrollError) { console.error(enrollError); return; }
-    if (enrollments.length === 0) { setSemesterCredits(0); setCreditWarning(''); return; }
+    if (enrollments.length === 0) { setSemesterCredits(0); checkCreditWarning(0); return; }
 
     const { data: enrolledCourses, error: coursesError } = await supabase
       .from('courses').select('credits').in('id', enrollments.map(e => e.course_id));
@@ -51,29 +42,14 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
     checkCreditWarning(total);
   }, [userId]);
 
-
   useEffect(() => {
-    if (!userId) return;
-    setLoading(true);
-    Promise.all([fetchCourses(), fetchUserCourses()]).finally(() => setLoading(false));
-  }, [userId, fetchCourses, fetchUserCourses]);
-
-  useEffect(() => {
-    if (userId && selectedSemesterId) fetchSemesterCredits(selectedSemesterId);
-  }, [selectedSemesterId, userId, fetchSemesterCredits]);
-
-  useEffect(() => {
-    if (!courses.length) return;
-    let available = courses.filter(c => !userCourseIds.includes(c.id));
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      available = available.filter(
-        c => c.name.toLowerCase().includes(term) || c.code.toLowerCase().includes(term)
-      );
-    }
-    setFilteredCourses(available);
-  }, [courses, userCourseIds, searchTerm]);
-
+    const init = async () => {
+      await fetchUserCourses();
+      if (selectedSemesterId) await fetchSemesterCredits(selectedSemesterId);
+      setLoading(false);
+    };
+    init();
+  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId]);
 
   function checkCreditWarning(total) {
     if (total < MIN_CREDITS) {
@@ -85,22 +61,42 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
     }
   }
 
+  async function handleFetchCourse() {
+    if (!codePrefix || !courseNumber) {
+      setMessage({ text: "Enter both course code and number.", type: "warning" });
+      return;
+    }
 
-  async function handleSelect(courseId) {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("*")
+      .ilike("code", codePrefix.trim())
+      .eq("number", courseNumber.trim())
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      setMessage({ text: "Course not found.", type: "error" });
+      setSelectedCourse(null);
+      return;
+    }
+    if (userCourseIds.includes(data.id)) {
+      setMessage({ text: "You are already enrolled in this course.", type: "warning" });
+      setSelectedCourse(null);
+      return;
+    }
+    setSelectedCourse(data);
+    setMessage(null);
+  }
+
+  async function handleSelect() {
     if (!userId) {
       setMessage({ text: "Please log in to register for courses.", type: "error" }); return;
     }
     if (!selectedSemesterId) {
       setMessage({ text: "Please select a semester before adding a course.", type: "warning" }); return;
     }
-
-    const selectedCourse = courses.find(c => c.id === courseId);
-    if (!selectedCourse) {
-      setMessage({ text: "Course not found.", type: "error" }); return;
-    }
-    if (userCourseIds.includes(courseId)) {
-      setMessage({ text: "You are already enrolled in this course.", type: "warning" }); return;
-    }
+    if (!selectedCourse) return;
 
     const courseCredits = selectedCourse.credits || 0;
     const newTotal = semesterCredits + courseCredits;
@@ -111,13 +107,10 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
       }); return;
     }
 
-    setMessage(null);
     setRegistering(true);
-
     try {
       const { data: prereqs, error: prereqError } = await supabase
-        .from("prerequisites").select("prereq_course_id").eq("course_id", courseId);
-
+        .from("prerequisites").select("prereq_course_id").eq("course_id", selectedCourse.id);
       if (prereqError) {
         setMessage({ text: "Error checking prerequisites. Please try again.", type: "error" }); return;
       }
@@ -138,7 +131,7 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
       }
 
       const { error: insertError } = await supabase.from("user_courses").insert({
-        user_id: userId, course_id: courseId, semester_id: selectedSemesterId,
+        user_id: userId, course_id: selectedCourse.id, semester_id: selectedSemesterId,
         status: "enrolled", grade: null, attribute: "Major Course",
       });
 
@@ -147,19 +140,20 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
         console.error(insertError); return;
       }
 
-      const nextTotal = semesterCredits + courseCredits;
-      setUserCourseIds(prev => [...prev, courseId]);
-      setSemesterCredits(nextTotal);
-      checkCreditWarning(nextTotal);
-      setMessage({ text: `${selectedCourse.code} added successfully!`, type: "success" });
+      setUserCourseIds(prev => [...prev, selectedCourse.id]);
+      setSemesterCredits(newTotal);
+      checkCreditWarning(newTotal);
+      setMessage({ text: `${selectedCourse.code} ${selectedCourse.number} added successfully!`, type: "success" });
+      setSelectedCourse(null);
+      setCodePrefix('');
+      setCourseNumber('');
       if (onCourseRegistered) onCourseRegistered();
     } finally {
       setRegistering(false);
     }
   }
 
-
-  if (loading) return <div className="prereq-loading">Loading courses…</div>;
+  if (loading) return <div className="prereq-loading">Loading…</div>;
 
   const creditStatus =
     semesterCredits < MIN_CREDITS ? 'below' :
@@ -167,7 +161,6 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
 
   return (
     <div className="prereq-wrapper">
-
       <div className="prereq-header">
         <h2 className="prereq-title">Add Courses</h2>
         <div className={`prereq-credit-badge prereq-credit-badge--${creditStatus}`}>
@@ -175,7 +168,6 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
         </div>
       </div>
 
-      {/* Credit warning */}
       {creditWarning && (
         <div className="prereq-notice prereq-notice--warning" role="alert">
           <span className="prereq-notice-icon">⚠</span>
@@ -183,60 +175,42 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
         </div>
       )}
 
-      {/* Search */}
-      <div className="prereq-search-row">
+      <div className="prereq-course-search">
         <input
           type="text"
-          className="prereq-search"
-          placeholder="Search by name or code…"
-          value={searchTerm}
-          onChange={e => { setSearchTerm(e.target.value); setMessage(null); }}
-          aria-label="Search courses"
+          placeholder="Course code (e.g., cvsp)"
+          value={codePrefix}
+          onChange={e => setCodePrefix(e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && handleFetchCourse()}
         />
-        <span className="prereq-count">
-          {filteredCourses.length} course{filteredCourses.length !== 1 ? 's' : ''}
-        </span>
+        <input
+          type="text"
+          placeholder="Course number (e.g., 101)"
+          value={courseNumber}
+          onChange={e => setCourseNumber(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleFetchCourse()}
+        />
+        <button onClick={handleFetchCourse}>Search</button>
       </div>
 
-      {/* Course list*/}
-      <div className="prereq-course-list">
-        {filteredCourses.length === 0 ? (
-          <div className="prereq-empty">
-            {searchTerm ? 'No courses match your search.' : 'No available courses found.'}
+      {selectedCourse && (
+        <div className="prereq-course-row">
+          <div>
+            <span className="course-code">{selectedCourse.code} {selectedCourse.number}</span>
+            <span className="course-name">{selectedCourse.name}</span>
+            <span className="course-credits">{selectedCourse.credits} credits</span>
           </div>
-        ) : (
-          filteredCourses.map(course => (
-            <div key={course.id} className="prereq-course-row">
-              <div className="prereq-course-info">
-                <span className="prereq-course-name">
-                  {course.name}
-                  <span className="prereq-course-code"> ({course.code})</span>
-                </span>
-                <span className="prereq-course-credits">Credits: {course.credits}</span>
-              </div>
-              <button
-                className="prereq-add-btn"
-                onClick={() => handleSelect(course.id)}
-                disabled={registering}
-                aria-label={`Add ${course.code} – ${course.name}`}
-              >
-                {registering ? '…' : '+ Add'}
-              </button>
-            </div>
-          ))
-        )}
-      </div>
+          <button onClick={handleSelect} disabled={registering}>
+            {registering ? 'Adding…' : '+ Add'}
+          </button>
+        </div>
+      )}
 
-      {/* Feedback message */}
       {message && (
-        <div
-          className={`prereq-message prereq-message--${message.type}`}
-          role="alert"
-          aria-live="polite"
-        >
+        <div className={`prereq-message prereq-message--${message.type}`} role="alert" aria-live="polite">
           {message.type === 'success' && '✓ '}
           {message.type === 'warning' && '⚠ '}
-          {message.type === 'error'   && '✕ '}
+          {message.type === 'error' && '✕ '}
           {message.text}
         </div>
       )}

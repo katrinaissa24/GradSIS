@@ -8,7 +8,8 @@ export default function CourseCard({
   course,
   semesterStatus,
   updateCourse,
-  dragPreview = false // true when rendered in CustomDragLayer
+  dragPreview = false, // true when rendered in CustomDragLayer,
+  deleteCourse
 }) {
   const canEditGrade = semesterStatus === "previous";
   const ref = useRef(null);
@@ -128,6 +129,25 @@ export default function CourseCard({
           ))}
         </select>
       </div>
+      <button
+  onClick={(e) => {
+    e.stopPropagation();
+    if (window.confirm("Delete this course?")) {
+      deleteCourse(course.id);
+    }
+  }}
+  style={{
+    padding: "4px 8px",
+    borderRadius: 6,
+    border: "1px solid #ef4444",
+    background: "#fff",
+    color: "#ef4444",
+    cursor: "pointer",
+    fontSize: 12,
+  }}
+>
+  Delete
+</button>
     </div>
   );
 }

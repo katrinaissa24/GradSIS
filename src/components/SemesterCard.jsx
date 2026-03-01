@@ -2,11 +2,13 @@ import CourseCard from "./CourseCard";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
+import Prerequisite from "../utils/errors";
+import { useState } from "react";
 
-export default function SemesterCard({ semester, updateStatus, updateCourse, moveCourse }) {
+export default function SemesterCard({ semester, updateStatus, updateCourse, moveCourse,userId, refresh,deleteCourse}) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
-
+const [showAddCourses, setShowAddCourses] = useState(false);
   // Drop zone for courses
   const [{ isOver }, drop] = useDrop({
     accept: "COURSE",
@@ -89,6 +91,7 @@ export default function SemesterCard({ semester, updateStatus, updateCourse, mov
             course={course}
             semesterStatus={semester.status}
             updateCourse={updateCourse}
+            deleteCourse={deleteCourse}
           />
         ))}
       </div>
@@ -104,7 +107,40 @@ export default function SemesterCard({ semester, updateStatus, updateCourse, mov
       >
         <div>Total Credits: <b>{credits}</b></div>
         <div>Semester GPA: <b>{gpa}</b></div>
-      </div>
+      </div>{/* ADD COURSE BUTTON */}
+<button
+  onClick={() => setShowAddCourses(prev => !prev)}
+  style={{
+    marginTop: 10,
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #ddd",
+    background: "#111",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: 13,
+  }}
+>
+  {showAddCourses ? "Close" : "+ Add Course"}
+</button>
+
+{/* SHOW COURSE SELECTOR */}
+{showAddCourses && (
+  <div style={{ marginTop: 16 }}>
+    <Prerequisite
+      userId={userId}
+      selectedSemesterId={semester.id}
+      onCourseRegistered={refresh}
+    />
+  </div>
+)}
     </div>
   );
+}async function deleteCourse(courseId) {
+  await supabase
+    .from("user_courses")
+    .delete()
+    .eq("id", courseId);
+
+  initialize(); // refresh data
 }

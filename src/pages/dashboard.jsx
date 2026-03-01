@@ -7,7 +7,6 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 
-
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
@@ -173,6 +172,21 @@ export default function Dashboard() {
     });
   });
 }
+async function deleteCourse(courseId) {
+  // Optimistic UI update
+  setSemesters(prev =>
+    prev.map(sem => ({
+      ...sem,
+      user_courses: sem.user_courses.filter(c => c.id !== courseId)
+    }))
+  );
+
+  // Delete from database
+  await supabase
+    .from("user_courses")
+    .delete()
+    .eq("id", courseId);
+}
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
 
   const totalGPA = calculateSemesterGPA(allCourses);
@@ -263,14 +277,15 @@ if (loading) {
       <SemesterCard
         key={sem.id}
         semester={sem}
+        userId={authUser?.id}
         refresh={initialize}
         updateStatus={updateSemesterStatus}
         updateCourse={updateCourseGrade}
         moveCourse={moveCourse}
+        deleteCourse={deleteCourse} 
       />
     ))}
-  </div>
-
+  </div>  
   {/* RIGHT SIDE — ELECTIVES TRACKER */}
   <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
     <div
