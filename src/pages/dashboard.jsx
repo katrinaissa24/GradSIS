@@ -6,6 +6,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
+import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -56,34 +57,57 @@ export default function Dashboard() {
   }
 
   function calcElectivesProgress(semesters) {
-    const earned = {};
-    for (const k of Object.keys(ELECTIVE_REQUIREMENTS)) earned[k] = 0;
+  const EXCLUDED = new Set(["F", "W", "WF"]); // don't count failed/withdrawn
+  const counted = [];
+  for (const sem of semesters) {
+    for (const uc of sem.user_courses || []) {
+      // skip failed/withdrawn
+      if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
 
-    for (const sem of semesters) {
-      for (const uc of sem.user_courses || []) {
-        const grade = uc?.grade;
-        const credits = uc?.courses?.credits ?? 0;
+      const credits = uc?.courses?.credits ?? 0;
+      if (!credits) continue;
 
-        if (!grade || !PASSING_GRADES.has(grade)) continue;
+      // eligible attributes coming from the join table we filled
+      const eligibleAttrs =
+        (uc?.courses?.course_eligible_attributes || [])
+          .map(x => x.attribute)
+          .filter(Boolean);
 
-        const bucket = ATTRIBUTE_TO_BUCKET[uc?.attribute];
-        if (!bucket) continue;
+      // fallback: if none exist, use the single attribute
+      const attrsToUse = eligibleAttrs.length
+        ? eligibleAttrs
+        : [uc?.attribute].filter(Boolean);
 
-        earned[bucket] += credits;
-      }
+      // convert attributes -> your UI bucket names
+      const eligibleBuckets = [...new Set(
+        attrsToUse.map(a => ATTRIBUTE_TO_BUCKET[a]).filter(Boolean)
+      )];
+
+      if (!eligibleBuckets.length) continue;
+
+      counted.push({
+        id: uc.id,
+        credits,
+        eligibleBuckets, // <-- this is what allows switching
+      });
     }
-
-    return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
-      const e = earned[bucket] || 0;
-      return {
-        bucket,
-        earned: e,
-        required,
-        remaining: Math.max(0, required - e),
-        pct: required ? Math.min(100, Math.round((e / required) * 100)) : 0,
-      };
-    });
   }
+
+  // run optimizer
+  const { earned } = autoAssignBuckets(counted, ELECTIVE_REQUIREMENTS);
+
+  // return your UI rows
+  return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
+    const e = earned[bucket] || 0;
+    return {
+      bucket,
+      earned: e,
+      required,
+      remaining: Math.max(0, required - e),
+      pct: required ? Math.min(100, Math.round((e / required) * 100)) : 0,
+    };
+  });
+}
 
   async function initialize() {
     setLoading(true);
@@ -106,15 +130,23 @@ export default function Dashboard() {
 
       const semesterIds = userSemesters.map((s) => s.id);
 
-      const { data: userCourses } = await supabase
-        .from("user_courses")
-        .select("*, courses(id,name,code,credits)")
-        .in("semester_id", semesterIds);
+const { data: userCourses } = await supabase
+  .from("user_courses")
+  .select(`
+    *,
+    courses (
+      id, name, code, credits,
+      course_eligible_attributes ( attribute )
+    )
+  `)
+  .in("semester_id", semesterIds);
 
       const formattedSemesters = userSemesters.map((sem) => ({
         ...sem,
         user_courses: userCourses.filter((c) => c.semester_id === sem.id),
       }));
+
+      
 
       setSemesters(formattedSemesters);
       setLoading(false);
