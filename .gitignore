@@ -26,3 +26,7 @@ dist-ssr
 .env.*
 # local seed data
 gen_ed_courses.csv
+
+# local helper scripts (do not commit)
+check_key.py
+scripts/*.py
