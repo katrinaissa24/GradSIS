@@ -5,7 +5,7 @@ export function calculateSemesterGPA(courses) {
   let totalCredits = 0;
 
   courses.forEach(c => {
-    if (c.grade && gradePoints[c.grade]) {
+    if (c.grade && Object.prototype.hasOwnProperty.call(gradePoints, c.grade)) {
       totalPoints += gradePoints[c.grade] * c.courses.credits;
       totalCredits += c.courses.credits;
     }

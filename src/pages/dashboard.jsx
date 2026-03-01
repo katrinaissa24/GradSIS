@@ -19,7 +19,7 @@ export default function Dashboard() {
   navigate("/auth");
 }
   const PASSING_GRADES = new Set([
-    "A+", "A", "A-","B+","B","B-","C+","C","C-","D+","D","D-"
+    "A+", "A", "A-","B+","B","B-","C+","C","C-","D+","D","D-","PASS"
   ]);
 
       const ELECTIVE_REQUIREMENTS = {
