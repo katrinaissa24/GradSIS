@@ -5,4 +5,4 @@ export const gradePoints = {
   "D+": 1.3, "D": 1.0, "F": 0.0
 };
 
-export const gradeOptions = Object.keys(gradePoints);
+export const gradeOptions = [...Object.keys(gradePoints), "PASS", "FAIL"];
