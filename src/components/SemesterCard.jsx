@@ -5,14 +5,18 @@ import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
 import { useState } from "react";
 
-export default function SemesterCard({ semester, updateStatus, updateCourse, moveCourse,userId, refresh,deleteCourse}) {
+export default function SemesterCard({ semester, updateStatus, updateCourse, moveCourse,userId, refresh,deleteCourse, onSidebarDrop }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
 const [showAddCourses, setShowAddCourses] = useState(false);
   // Drop zone for courses
   const [{ isOver }, drop] = useDrop({
-    accept: "COURSE",
+    accept:  "SIDEBAR_COURSE",
     drop: async (item) => {
+       if (item.type === "SIDEBAR_COURSE") {
+    onSidebarDrop && onSidebarDrop(item.course, semester.id);
+    return;
+  }
       if (item.course.semester_id === semester.id) return; // ignore same semester
 
       // Update local state in Dashboard
