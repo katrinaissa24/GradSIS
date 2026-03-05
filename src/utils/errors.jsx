@@ -129,16 +129,28 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
           }); return;
         }
       }
+const { data: targetSemester } = await supabase
+  .from("user_semesters")
+  .select("id")
+  .eq("user_id", userId)
+  .eq("semester_number", selectedCourse.req_sem)
+  .single();
 
-      const { error: insertError } = await supabase.from("user_courses").insert({
-        user_id: userId, course_id: selectedCourse.id, semester_id: selectedSemesterId,
-        status: "enrolled", grade: null, attribute: "Major Course",
-      });
+if (targetSemester && targetSemester.id !== selectedSemesterId) {
+  setMessage({
+    text: `This course is intended for semester ${selectedCourse.req_sem}.`,
+    type: "warning",
+  });
+  return;
+}
+const insertError = await assignCourseToSemester(selectedCourse, selectedSemesterId);
 
-      if (insertError) {
-        setMessage({ text: "Failed to register course. Please try again.", type: "error" });
-        console.error(insertError); return;
-      }
+if (insertError) {
+  setMessage({ text: "Failed to register course. Please try again.", type: "error" });
+  console.error(insertError);
+  return;
+}
+     
 
       setUserCourseIds(prev => [...prev, selectedCourse.id]);
       setSemesterCredits(newTotal);
@@ -152,6 +164,22 @@ export default function Prerequisite({ userId, selectedSemesterId, onCourseRegis
       setRegistering(false);
     }
   }
+async function assignCourseToSemester(course, semesterId) {
+
+  const { error } = await supabase
+    .from("user_courses")
+    .insert({
+      user_id: userId,
+      course_id: course.id,
+      semester_id: semesterId,
+      status: "enrolled",
+      grade: null,
+      attribute: "Major Course"
+    }); 
+    
+    console.log("insert error:", error); 
+  return error;
+}
 
   if (loading) return <div className="prereq-loading">Loading…</div>;
 
