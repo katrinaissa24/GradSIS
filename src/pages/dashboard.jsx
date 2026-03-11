@@ -437,320 +437,319 @@ export default function Dashboard() {
   if (loading) {
     return <div style={{ padding: 20 }}>Initializing...</div>;
   }
+  
   return (
-    <DndProvider backend={HTML5Backend}>
-      <CustomDragLayer />
-      <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
-        {/* NAV BAR */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "16px 24px",
-            backgroundColor: "#fff",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-            marginBottom: 24,
-            borderRadius: "0 0 12px 12px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button
-              onClick={() => setSidebarOpen((prev) => !prev)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                gap: 5,
-                padding: 4,
-              }}
-            >
-              <span
-                style={{
-                  display: "block",
-                  width: 22,
-                  height: 2,
-                  background: "#111",
-                  borderRadius: 2,
-                }}
-              />
-              <span
-                style={{
-                  display: "block",
-                  width: 22,
-                  height: 2,
-                  background: "#111",
-                  borderRadius: 2,
-                }}
-              />
-              <span
-                style={{
-                  display: "block",
-                  width: 22,
-                  height: 2,
-                  background: "#111",
-                  borderRadius: 2,
-                }}
-              />
-            </button>
-            <h1 style={{ fontSize: 26, margin: 0 }}>Dashboard</h1>
+  <DndProvider backend={HTML5Backend}>
+    <CustomDragLayer />
+
+    <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
+
+      {/* NAVBAR */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 300,
+          background: "#fff",
+          borderBottom: "1px solid #e5e7eb",
+          padding: "14px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between"
+        }}
+      >
+        {/* LEFT */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <button
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              gap: 5
+            }}
+          >
+            <span style={{ width: 22, height: 2, background: "#111" }} />
+            <span style={{ width: 22, height: 2, background: "#111" }} />
+            <span style={{ width: 22, height: 2, background: "#111" }} />
+          </button>
+
+          <span style={{ fontWeight: 600, fontSize: 25 }}>
+            GradSIS
+          </span>
+        </div>
+
+        {/* RIGHT */}
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+
+          <div style={{ fontSize: 13, color: "#444", textAlign: "right" }}>
+            <div style={{ fontWeight: 600 }}>
+              {authUser?.name || authUser?.email}
+            </div>
+
+            <div>
+              GPA <b>{totalGPA}</b> • Hours <b>{totalHours}</b>
+            </div>
+
+            <div>
+              Credits <b>{completed}</b> / {total}
+            </div>
           </div>
-          <div
+
+          <button
             onClick={handleSignOut}
             style={{
-              marginTop: 8,
-              padding: "6px 14px",
+              padding: "7px 14px",
               borderRadius: 8,
               border: "1px solid #ddd",
-              background: "#fff",
+              background: "#fafafa",
               cursor: "pointer",
-              fontSize: 14,
-              display: "inline-block",
+              fontSize: 13
             }}
           >
             Sign Out
-          </div>
+          </button>
 
+        </div>
+      </div>
+
+
+      {/* PAGE HEADER */}
+      <div style={{ padding: "24px 24px 8px 24px" }}>
+        <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
+        <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
+          Plan your past, current and future semesters, track your progress, and explore electives.
+        </div>
+        <br></br>
+      </div>
+
+
+      <div
+        style={{
+          display: "flex",
+          gap: 24,
+          alignItems: "flex-start",
+          padding: "0 24px 24px 24px"
+        }}
+      >
+
+        {sidebarOpen && (
+          <SidebarOverlay onClose={() => setSidebarOpen(false)} />
+        )}
+
+
+        {/* SIDEBAR */}
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            height: "100vh",
+            width: 280,
+            background: "#fff",
+            boxShadow: "4px 0 20px rgba(0,0,0,0.12)",
+            zIndex: 400,
+            transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+            transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
+            display: "flex",
+            flexDirection: "column"
+          }}
+        >
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              fontSize: 14,
-              textAlign: "right",
-              gap: 6,
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "16px 14px",
+              borderBottom: "1px solid #f1f5f9"
             }}
           >
-            <div style={{ fontWeight: 600 }}>
-              Welcome {authUser?.name || authUser?.email}
-            </div>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>
+              Course Catalog
+            </span>
 
-            <div style={{ fontSize: 13, color: "#555" }}>
-              Total GPA: <b style={{ color: "#111" }}>{totalGPA}</b>
-            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 20,
+                cursor: "pointer",
+                color: "#6b7280"
+              }}
+            >
+              ×
+            </button>
+          </div>
 
-            <div style={{ fontSize: 13, color: "#555" }}>
-              Total Hours: <b style={{ color: "#111" }}>{totalHours}</b>
-            </div>
-
-            <div style={{ fontSize: 13, color: "#555" }}>
-              Credits Completed: <b style={{ color: "#111" }}>{completed}</b> /{" "}
-              {total}
-            </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <PrerequisiteSidebar
+              courses={prerequisiteCourses}
+              enrolledCourseIds={
+                new Set(allCourses.map((uc) => uc.course_id))
+              }
+            />
           </div>
         </div>
 
+
+        {/* SEMESTERS */}
         <div
           style={{
+            flex: 1,
             display: "flex",
-            gap: 24,
-            alignItems: "flex-start",
-            padding: "0 24px 24px 24px",
+            flexDirection: "column",
+            gap: 20
           }}
         >
-          {sidebarOpen && <SidebarOverlay onClose={() => setSidebarOpen(false)} />}
+          {semesters.map((sem) => (
+            <SemesterCard
+              key={sem.id}
+              semester={sem}
+              userId={authUser?.id}
+              refresh={initialize}
+              updateStatus={updateSemesterStatus}
+              updateCourse={updateCourseGrade}
+              moveCourse={moveCourse}
+              deleteCourse={deleteCourse}
+              onSidebarDrop={handleSidebarDrop}
+            />
+          ))}
 
 
+          {/* ADD SEMESTER — moved to bottom */}
           <div
             style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              height: "100vh",
-              width: 280,
               background: "#fff",
-              boxShadow: "4px 0 20px rgba(0,0,0,0.12)",
-              zIndex: 101,
-              transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
-              transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
+              border: "1px solid #eee",
+              borderRadius: 14,
+              padding: 16,
+              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
               display: "flex",
-              flexDirection: "column",
+              gap: 10,
+              alignItems: "center"
+            }}
+          >
+            <input
+              type="text"
+              value={newSemesterName}
+              onChange={(e) => setNewSemesterName(e.target.value)}
+              placeholder="Enter new semester name"
+              style={{
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                fontSize: 14
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddSemester();
+              }}
+            />
+
+            <button
+              onClick={handleAddSemester}
+              disabled={addingSemester}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "none",
+                background: "#111",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 14
+              }}
+            >
+              {addingSemester ? "Adding..." : "Add Semester"}
+            </button>
+          </div>
+
+        </div>
+
+
+        {/* ELECTIVES TRACKER */}
+        <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
+          <div
+            style={{
+              background: "white",
+              borderRadius: 14,
+              padding: 14,
+              border: "1px solid #eee",
+              boxShadow: "0 1px 6px rgba(0,0,0,0.06)"
             }}
           >
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "center",
-                padding: "16px 14px",
-                borderBottom: "1px solid #f1f5f9",
+                marginBottom: 10
               }}
             >
-              <span style={{ fontWeight: 700, fontSize: 14 }}>
-                Course Catalog
+              <span style={{ fontWeight: 600, fontSize: 14 }}>
+                Electives
               </span>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  fontSize: 20,
-                  cursor: "pointer",
-                  color: "#6b7280",
-                  lineHeight: 1,
-                }}
-              >
-                ×
-              </button>
+
+              <span style={{ fontSize: 12, color: "#666" }}>
+                {electivesRemainingTotal} left
+              </span>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto" }}>
-              <PrerequisiteSidebar
-                courses={prerequisiteCourses}
-                enrolledCourseIds={
-                  new Set(allCourses.map((uc) => uc.course_id))
-                }
-              />
-            </div>
-          </div>
-
-          {/* Center  — SEMESTERS */}
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              gap: 20,
-            }}
-          >
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #eee",
-                borderRadius: 14,
-                padding: 16,
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-              }}
-            >
-              <input
-                type="text"
-                value={newSemesterName}
-                onChange={(e) => setNewSemesterName(e.target.value)}
-                placeholder="Enter new semester name"
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                  fontSize: 14,
-                  outline: "none",
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddSemester();
-                }}
-              />
-
-              <button
-                onClick={handleAddSemester}
-                disabled={addingSemester}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "#111",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  opacity: addingSemester ? 0.7 : 1,
-                }}
-              >
-                {addingSemester ? "Adding..." : "Add Semester"}
-              </button>
-            </div>
-
-            {semesters.map((sem) => (
-              <SemesterCard
-                key={sem.id}
-                semester={sem}
-                userId={authUser?.id}
-                refresh={initialize}
-                updateStatus={updateSemesterStatus}
-                updateCourse={updateCourseGrade}
-                moveCourse={moveCourse}
-                deleteCourse={deleteCourse}
-                onSidebarDrop={handleSidebarDrop}
-              />
-            ))}
-          </div>
-          {/* RIGHT SIDE — ELECTIVES TRACKER */}
-          <div
-            style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}
-          >
-            <div
-              style={{
-                background: "white",
-                borderRadius: 14,
-                padding: 14,
-                border: "1px solid #eee",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 10,
-                }}
-              >
-                <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
-                <span style={{ fontSize: 12, color: "#666" }}>
-                  {electivesRemainingTotal} left
-                </span>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {electiveRows.map((r) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {electiveRows.map((r) => (
+                <div
+                  key={r.bucket}
+                  style={{
+                    border: "1px solid #f0f0f0",
+                    borderRadius: 10,
+                    padding: 10
+                  }}
+                >
                   <div
-                    key={r.bucket}
                     style={{
-                      border: "1px solid #f0f0f0",
-                      borderRadius: 10,
-                      padding: 10,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 12
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>
+                      {r.bucket}
+                    </span>
+
+                    <span>
+                      {r.earned}/{r.required}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      height: 6,
+                      background: "#eee",
+                      borderRadius: 999,
+                      marginTop: 6
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12,
-                      }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{r.bucket}</span>
-                      <span>
-                        {r.earned}/{r.required}
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
                         height: 6,
-                        background: "#eee",
-                        borderRadius: 999,
-                        marginTop: 6,
+                        width: `${r.pct}%`,
+                        background: "#111",
+                        borderRadius: 999
                       }}
-                    >
-                      <div
-                        style={{
-                          height: 6,
-                          width: `${r.pct}%`,
-                          background: "#111",
-                          borderRadius: 999,
-                        }}
-                      />
-                    </div>
+                    />
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
+
       </div>
-    </DndProvider>
-  );
+    </div>
+  </DndProvider>
+);
+    
 }
  function SidebarOverlay({ onClose }) {
   const isDragging = useDragLayer((monitor) => monitor.isDragging());

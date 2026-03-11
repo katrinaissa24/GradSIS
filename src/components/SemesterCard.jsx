@@ -114,7 +114,7 @@ export default function SemesterCard({
     <div
       ref={drop}
       style={{
-        width: "60%",
+        width: "80%",
         margin: "0 auto",
         background: "#fefefe",
         borderRadius: 12,
@@ -319,9 +319,10 @@ export default function SemesterCard({
           marginTop: 10,
           padding: "8px 12px",
           borderRadius: 8,
-          border: "1px solid #ddd",
-          background: "#111",
-          color: "#fff",
+          border: "1px solid #000",
+          background: "#fff",
+
+          color: "#000",
           cursor: "pointer",
           fontSize: 13,
         }}
