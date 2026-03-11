@@ -8,6 +8,7 @@ import CustomDragLayer from "../components/CustomDragLayer";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
+import { useDragLayer } from "react-dnd";
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -290,6 +291,7 @@ export default function Dashboard() {
       id: tempId,
       course_id: course.id,
       semester_id: semesterId,
+      attribute: "Major Course", 
       grade: null,
       courses: {
         id: course.id,
@@ -316,6 +318,7 @@ export default function Dashboard() {
         course_id: course.id,
         semester_id: semesterId,
         grade: null,
+        attribute: "Major Course",
       })
       .select(
         `
@@ -327,6 +330,7 @@ export default function Dashboard() {
     `,
       )
       .single();
+    console.log("RAW RESPONSE:", { data, error }); 
 
     if (error) {
       // 4. Roll back on failure
@@ -545,18 +549,8 @@ export default function Dashboard() {
             padding: "0 24px 24px 24px",
           }}
         >
-          {/* SLIDING SIDEBAR OVERLAY */}
-          {sidebarOpen && (
-            <div
-              onClick={() => setSidebarOpen(false)}
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.3)",
-                zIndex: 100,
-              }}
-            />
-          )}
+          {sidebarOpen && <SidebarOverlay onClose={() => setSidebarOpen(false)} />}
+
 
           <div
             style={{
@@ -756,5 +750,20 @@ export default function Dashboard() {
         </div>
       </div>
     </DndProvider>
+  );
+}
+ function SidebarOverlay({ onClose }) {
+  const isDragging = useDragLayer((monitor) => monitor.isDragging());
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.3)",
+        zIndex: 100,
+        pointerEvents: isDragging ? "none" : "auto",
+      }}
+    />
   );
 }

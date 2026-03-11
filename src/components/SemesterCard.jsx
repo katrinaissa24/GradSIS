@@ -1,6 +1,6 @@
 import CourseCard from "./CourseCard";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
-import { useDrop } from "react-dnd";
+import { useDrop, useDragLayer } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
 import { useState } from "react";
@@ -24,11 +24,15 @@ export default function SemesterCard({
   );
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
+  const { isDraggingAny } = useDragLayer((monitor) => ({
+  isDraggingAny: monitor.isDragging(),
+}));
   // Drop zone for courses
   const [{ isOver }, drop] = useDrop({
-    accept: "SIDEBAR_COURSE",
-    drop: async (item) => {
-      if (item.type === "SIDEBAR_COURSE") {
+  accept: ["COURSE", "SIDEBAR_COURSE"],  
+    drop: async (item,monitor) => {
+          const itemType = monitor.getItemType();
+  if (itemType === "SIDEBAR_COURSE") {     
         onSidebarDrop && onSidebarDrop(item.course, semester.id);
         return;
       }
@@ -278,6 +282,7 @@ export default function SemesterCard({
           flexDirection: "column",
           gap: 10,
           transition: "all 0.2s ease",
+          pointerEvents: isDraggingAny ? "none" : "auto",
         }}
       >
         {semester.user_courses.map((course) => (

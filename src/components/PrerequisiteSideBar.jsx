@@ -109,13 +109,18 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
 
 function DraggableCourseCard({ course, isEnrolled }) {
   const [{ isDragging }, drag] = useDrag({
-    type: "SIDEBAR_COURSE",
-    item: { type: "SIDEBAR_COURSE", course },
-    canDrag: !isEnrolled,
-    collect: (monitor) => ({
-      isDragging: !!monitor.isDragging(),
-    }),
-  });
+  type: "SIDEBAR_COURSE",
+  item: () => ({ 
+    type: "SIDEBAR_COURSE", 
+    course,
+    grabOffsetX: 20,
+    grabOffsetY: 10
+  }),
+  canDrag: !isEnrolled,
+  collect: (monitor) => ({
+    isDragging: !!monitor.isDragging(),
+  }),
+});
 
   const attrs = (course.course_eligible_attributes || []).map((x) => x.attribute).filter(Boolean);
 
