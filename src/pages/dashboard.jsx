@@ -75,7 +75,7 @@ export default function Dashboard() {
   }
 
   function calcElectivesProgress(semesters) {
-    const EXCLUDED = new Set(["F", "W", "WF"]); // don't count failed/withdrawn
+    const EXCLUDED = new Set(["F", "W", "FAIL"]); // don't count failed/withdrawn
     const counted = [];
     for (const sem of semesters) {
       for (const uc of sem.user_courses || []) {
