@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [addingSemester, setAddingSemester] = useState(false);
+  const [openAddCourses, setOpenAddCourses] = useState({});
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -83,9 +84,15 @@ export default function Dashboard() {
         // skip failed/withdrawn
         if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
 
-        const credits = uc?.courses?.credits ?? 0;
-        if (!credits) continue;
-
+        let  credits = uc?.courses?.credits ?? 0;
+        if (!credits) {
+  if (uc.course_id === null && uc.attribute) {
+    const bucket = ATTRIBUTE_TO_BUCKET[uc.attribute];
+    credits = bucket ? 3 : 0;
+  }
+  if (!credits) continue;
+}
+        
         // eligible attributes coming from the join table we filled
         const eligibleAttrs = (uc?.courses?.course_eligible_attributes || [])
           .map((x) => x.attribute)
@@ -129,8 +136,8 @@ export default function Dashboard() {
     });
   }
 
-  async function initialize() {
-    setLoading(true);
+  async function initialize(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData?.session) {
@@ -174,9 +181,19 @@ export default function Dashboard() {
       }
 
       const formattedSemesters = safeSemesters.map((sem) => ({
-        ...sem,
-        user_courses: userCourses.filter((c) => c.semester_id === sem.id),
-      }));
+  ...sem,
+  user_courses: userCourses.filter((c) => c.semester_id === sem.id).map((uc) => ({
+    ...uc,
+    courses: uc.courses ?? {
+      id: null,
+      name: uc.attribute,
+      code: "ELECTIVE",
+      credits: 3,
+      course_eligible_attributes: [],
+    },
+  })),
+  
+}));
 
       setSemesters(formattedSemesters);
       setLoading(false);
@@ -277,28 +294,116 @@ export default function Dashboard() {
     // Delete from database
     await supabase.from("user_courses").delete().eq("id", courseId);
   }
-  async function handleSidebarDrop(course, semesterId) {
+  async function handleSidebarDrop(course, semesterId,electiveAttribute) {
     // 1. Duplicate check — bail if already in this semester
+      console.log("DROP:", course, semesterId, electiveAttribute); 
+   if (course) {
+    console.log("course object:", course);
     const targetSem = semesters.find((s) => s.id === semesterId);
-    const alreadyEnrolled = targetSem?.user_courses?.some(
-      (uc) => uc.course_id === course.id,
-    );
-    if (alreadyEnrolled) return;
+  const alreadyEnrolled = targetSem?.user_courses?.some(
+    (uc) => uc.course_id === course.id,
+  );
+  if (alreadyEnrolled) return;
+  // 1. Check prerequisites
+  const { data: prereqs, error: prereqError } = await supabase
+    .from("prerequisites")
+    .select("prereq_course_id")
+    .eq("course_id", course.id);
 
-    // 2. Optimistic insert with temp id
+  if (prereqError) {
+    alert("Error checking prerequisites.");
+    return;
+  }
+
+  if (prereqs?.length > 0) {
+const { data: enrolledData } = await supabase
+  .from("user_courses")
+  .select("course_id")
+  .eq("user_id", authUser.id);
+const enrolledCourseIds = (enrolledData || []).map((uc) => uc.course_id).filter(Boolean);
+console.log("prereqs:", prereqs);
+console.log("enrolledCourseIds:", enrolledCourseIds);
+console.log("missing:", prereqs.filter(p => !enrolledCourseIds.includes(p.prereq_course_id)));
+    const missing = prereqs.filter(
+      (p) => !enrolledCourseIds.includes(p.prereq_course_id)
+    );
+
+    if (missing.length > 0) {
+      const { data: missingCourses } = await supabase
+        .from("courses")
+        .select("id, code, number, name")
+        .in("id", missing.map((m) => m.prereq_course_id));
+
+      alert(
+        `Missing prerequisites: ${(missingCourses || [])
+          .map((c) => `${c.code} ${c.number} – ${c.name}`)
+          .join(", ")}`
+      );
+      return;
+    }
+  }
+
+  // 2. Check req_sem
+  const { data: semData } = await supabase
+    .from("user_semesters")
+    .select("semester_number")
+    .eq("id", semesterId)
+    .single();
+
+  if (course.req_sem && semData?.semester_number < course.req_sem) {
+    alert(`This course is intended for semester ${course.req_sem} or later.`);
+    return;
+  }
+
+  // 3. Check max credits (17)
+  const targetSemCourses = targetSem?.user_courses || [];
+  const currentCredits = targetSemCourses.reduce(
+    (sum, uc) => sum + (uc?.courses?.credits ?? 0), 0
+  );
+  if (currentCredits + (course.credits ?? 0) > 17) {
+    alert(`Cannot add: would exceed 17 credits for this semester.`);
+    return;
+}
+}
+if (!course) {
+  const targetSem = semesters.find((s) => s.id === semesterId);
+  const targetSemCourses = targetSem?.user_courses || [];
+  const currentCredits = targetSemCourses.reduce(
+    (sum, uc) => sum + (uc?.courses?.credits ?? 0), 0
+  );
+  if (currentCredits + 3 > 17) {
+    alert(`Cannot add: would exceed 17 credits for this semester.`);
+    return;
+  }
+}
+const BUCKET_TO_ATTRIBUTE = {
+  "Community Engaged Learning": "CEL",
+  "Cultures and Histories": "Cultures & Histories",
+  "Societies and Individuals": "Societies & Individuals",
+  "Human Values": "Human Values",
+  "Understanding the World": "Understanding the World",
+  "Technical Elective": "Elective",
+};
+const attributeToUse = BUCKET_TO_ATTRIBUTE[electiveAttribute] || electiveAttribute || "Elective";    // 2. Optimistic insert with temp id
     const tempId = `temp-${Date.now()}`;
     const optimisticEntry = {
       id: tempId,
-      course_id: course.id,
+      course_id: course?.id ?? null,
       semester_id: semesterId,
-      attribute: "Major Course", 
+      attribute: attributeToUse,
       grade: null,
-      courses: {
+      courses: course ? {
         id: course.id,
         name: course.name,
         code: course.code,
         credits: course.credits,
         course_eligible_attributes: course.course_eligible_attributes || [],
+      } : {
+        id: null,
+        name: attributeToUse,
+        code: "ELECTIVE",
+        credits: 3,
+        course_eligible_attributes: [],
       },
     };
 
@@ -315,10 +420,10 @@ export default function Dashboard() {
       .from("user_courses")
       .insert({
         user_id: authUser.id,
-        course_id: course.id,
+        course_id: course?.id ?? null,
         semester_id: semesterId,
         grade: null,
-        attribute: "Major Course",
+        attribute: attributeToUse,
       })
       .select(
         `
@@ -355,14 +460,22 @@ export default function Dashboard() {
           ? {
               ...sem,
               user_courses: sem.user_courses.map((uc) =>
-                uc.id === tempId ? data : uc,
-              ),
+  uc.id === tempId ? {
+    ...data,
+    courses: data.courses ?? {
+      id: null,
+      name: attributeToUse,
+      code: "ELECTIVE",
+      credits: 3,
+      course_eligible_attributes: [],
+    },
+  } : uc,
+),
             }
           : sem,
       ),
     );
   }
-
   async function handleAddSemester() {
     const trimmedName = newSemesterName.trim();
     if (!trimmedName) {
@@ -590,6 +703,8 @@ export default function Dashboard() {
               enrolledCourseIds={
                 new Set(allCourses.map((uc) => uc.course_id))
               }
+              electiveRows={electiveRows}
+              allUserCourses={allCourses}
             />
           </div>
         </div>
@@ -606,7 +721,7 @@ export default function Dashboard() {
         >
           {semesters.map((sem) => (
             <SemesterCard
-              key={sem.id}
+              key={sem.id + '-' + sem.user_courses.length}
               semester={sem}
               userId={authUser?.id}
               refresh={initialize}
@@ -615,6 +730,8 @@ export default function Dashboard() {
               moveCourse={moveCourse}
               deleteCourse={deleteCourse}
               onSidebarDrop={handleSidebarDrop}
+              showAddCourses={openAddCourses[sem.id] ?? false}
+              setShowAddCourses={(val) => setOpenAddCourses(prev => ({ ...prev, [sem.id]: val }))}
             />
           ))}
 

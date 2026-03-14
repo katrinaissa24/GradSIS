@@ -33,7 +33,7 @@ export default function SemesterCard({
     drop: async (item,monitor) => {
           const itemType = monitor.getItemType();
   if (itemType === "SIDEBAR_COURSE") {     
-        onSidebarDrop && onSidebarDrop(item.course, semester.id);
+        onSidebarDrop && onSidebarDrop(item.course, semester.id,item.electiveAttribute);
         return;
       }
       if (item.course.semester_id === semester.id) return; // ignore same semester
@@ -332,11 +332,13 @@ export default function SemesterCard({
 
       {/* SHOW COURSE SELECTOR */}
       {showAddCourses && (
-        <div style={{ marginTop: 16 }}>
-          <Prerequisite
+  <div key={semester.user_courses.length} style={{ marginTop: 16 }}>
+    <Prerequisite
+            key={semester.user_courses.length}
             userId={userId}
             selectedSemesterId={semester.id}
             onCourseRegistered={refresh}
+            courseCount={semester.user_courses.length}
           />
         </div>
       )}

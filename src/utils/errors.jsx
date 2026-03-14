@@ -6,6 +6,8 @@ export default function Prerequisite({
   userId,
   selectedSemesterId,
   onCourseRegistered,
+  courseCount,
+
 }) {
   const [userCourseIds, setUserCourseIds] = useState([]);
   const [message, setMessage] = useState(null);
@@ -42,11 +44,11 @@ export default function Prerequisite({
       if (!userId || !semesterId) return;
 
       const { data: enrollments, error: enrollError } = await supabase
-        .from("user_courses")
-        .select("course_id")
-        .eq("user_id", userId)
-        .eq("semester_id", semesterId)
-        .neq("status", "dropped");
+  .from("user_courses")
+  .select("course_id")
+  .eq("user_id", userId)
+  .eq("semester_id", semesterId)
+  .or("status.neq.dropped,status.is.null");
 
       if (enrollError) {
         console.error(enrollError);
@@ -58,25 +60,30 @@ export default function Prerequisite({
         checkCreditWarning(0);
         return;
       }
+console.log("enrollments:", enrollments);
+console.log("nonNullEnrollments:", enrollments.filter(e => e.course_id !== null));
+console.log("placeholders:", enrollments.filter(e => e.course_id === null).length);
+ const nonNullEnrollments = enrollments.filter((e) => e.course_id !== null);
+let total = 0;
 
-      const { data: enrolledCourses, error: coursesError } = await supabase
-        .from("courses")
-        .select("credits")
-        .in(
-          "id",
-          enrollments.map((e) => e.course_id),
-        );
+if (nonNullEnrollments.length > 0) {
+  const { data: enrolledCourses, error: coursesError } = await supabase
+    .from("courses")
+    .select("credits")
+    .in("id", nonNullEnrollments.map((e) => e.course_id));
 
-      if (coursesError) {
-        console.error(coursesError);
-        return;
-      }
+  if (coursesError) {
+    console.error(coursesError);
+    return;
+  }
 
-      const total = (enrolledCourses || []).reduce(
-        (sum, c) => sum + (c.credits || 0),
-        0,
-      );
+  total = (enrolledCourses || []).reduce(
+    (sum, c) => sum + (c.credits || 0), 0
+  );
+}
 
+const electivePlaceholders = enrollments.filter((e) => e.course_id === null).length;
+total += electivePlaceholders * 3;
       setSemesterCredits(total);
       checkCreditWarning(total);
     },
@@ -93,7 +100,7 @@ export default function Prerequisite({
     };
 
     init();
-  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId]);
+  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId,courseCount]);
 
   function checkCreditWarning(total) {
     if (total < MIN_CREDITS) {
