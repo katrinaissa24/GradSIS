@@ -384,8 +384,7 @@ const BUCKET_TO_ATTRIBUTE = {
   "Understanding the World": "Understanding the World",
   "Technical Elective": "Elective",
 };
-const attributeToUse = BUCKET_TO_ATTRIBUTE[electiveAttribute] || electiveAttribute || "Elective";    // 2. Optimistic insert with temp id
-    const tempId = `temp-${Date.now()}`;
+const attributeToUse = BUCKET_TO_ATTRIBUTE[electiveAttribute] || (course && !electiveAttribute ? "Major Course" : electiveAttribute) || "Elective";    const tempId = `temp-${Date.now()}`;
     const optimisticEntry = {
       id: tempId,
       course_id: course?.id ?? null,
