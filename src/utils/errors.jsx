@@ -7,7 +7,8 @@ export default function Prerequisite({
   selectedSemesterId,
   onCourseRegistered,
 }) {
-  const [userCourseIds, setUserCourseIds] = useState([]);
+  const [passedCourseIds, setPassedCourseIds] = useState([]);
+  const [blockedCourseIds, setBlockedCourseIds] = useState([]);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [semesterCredits, setSemesterCredits] = useState(0);
@@ -20,12 +21,28 @@ export default function Prerequisite({
   const MIN_CREDITS = 12;
   const MAX_CREDITS = 17;
 
+  const PASSED_GRADES = [
+    "A+",
+    "A",
+    "A-",
+    "B+",
+    "B",
+    "B-",
+    "C+",
+    "C",
+    "C-",
+    "D+",
+    "D",
+    "D-",
+    "PASS",
+  ];
+
   const fetchUserCourses = useCallback(async () => {
     if (!userId) return;
 
     const { data, error } = await supabase
       .from("user_courses")
-      .select("course_id")
+      .select("course_id, grade, status")
       .eq("user_id", userId)
       .neq("status", "dropped");
 
@@ -34,7 +51,20 @@ export default function Prerequisite({
       return;
     }
 
-    setUserCourseIds([...new Set((data || []).map((c) => c.course_id))]);
+    const passedIds = (data || [])
+      .filter((c) => PASSED_GRADES.includes(c.grade))
+      .map((c) => c.course_id);
+
+    const blockedIds = (data || [])
+      .filter((c) => {
+        const isCurrentlyEnrolled = !c.grade || c.grade === "";
+        const isPassed = PASSED_GRADES.includes(c.grade);
+        return isCurrentlyEnrolled || isPassed;
+      })
+      .map((c) => c.course_id);
+
+    setPassedCourseIds([...new Set(passedIds)]);
+    setBlockedCourseIds([...new Set(blockedIds)]);
   }, [userId]);
 
   const fetchSemesterCredits = useCallback(
@@ -132,9 +162,9 @@ export default function Prerequisite({
       return;
     }
 
-    if (userCourseIds.includes(data.id)) {
+    if (blockedCourseIds.includes(data.id)) {
       setMessage({
-        text: "You are already enrolled in this course.",
+        text: "You are already enrolled in this course or already passed it.",
         type: "warning",
       });
       setSelectedCourse(null);
@@ -192,15 +222,9 @@ export default function Prerequisite({
       }
 
       if (prereqs?.length > 0) {
-        console.log("Selected course:", selectedCourse);
-        console.log("User course IDs:", userCourseIds);
-        console.log("Prereqs:", prereqs);
-
         const missing = prereqs.filter(
-          (p) => !userCourseIds.includes(p.prereq_course_id),
+          (p) => !passedCourseIds.includes(p.prereq_course_id),
         );
-
-        console.log("Missing prereqs:", missing);
 
         if (missing.length > 0) {
           const { data: missingCourses, error: nameError } = await supabase

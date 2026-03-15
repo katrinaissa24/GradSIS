@@ -5,7 +5,11 @@ import { useNavigate } from "react-router-dom";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
-import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
+import {
+  calculateSemesterGPA,
+  calculateCredits,
+  calculateCumulativeGPAWithRepeats,
+} from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
 
@@ -215,13 +219,24 @@ export default function Dashboard() {
     initialize();
     fetchPrerequisiteCourses();
   }, []);
-  function updateSemesterStatus(id, newStatus) {
+  async function updateSemesterStatus(id, newStatus) {
     setSemesters((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
     );
+
+    const { error } = await supabase
+      .from("user_semesters")
+      .update({ status: newStatus })
+      .eq("id", id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      console.error("Failed to update semester status:", error);
+      await initialize();
+    }
   }
 
-  function updateCourseGrade(courseId, field, value) {
+  async function updateCourseGrade(courseId, field, value) {
     setSemesters((prev) =>
       prev.map((sem) => ({
         ...sem,
@@ -230,6 +245,25 @@ export default function Dashboard() {
         ),
       })),
     );
+
+    const updates = { [field]: value };
+
+    if (field === "grade") {
+      if (value === "W" || value === "WF") {
+        updates.status = "dropped";
+      } else {
+        updates.status = "completed";
+      }
+    }
+
+    const { error } = await supabase
+      .from("user_courses")
+      .update(updates)
+      .eq("id", courseId);
+
+    if (error) {
+      console.error("Failed to update course:", error);
+    }
   }
 
   function moveCourse(courseId, fromSemesterId, toSemesterId) {
@@ -415,7 +449,7 @@ export default function Dashboard() {
   }
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
 
-  const totalGPA = calculateSemesterGPA(allCourses);
+  const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateCredits(allCourses);
 
   const { completed } = calcCredits(semesters);
