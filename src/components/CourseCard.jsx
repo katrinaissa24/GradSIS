@@ -89,10 +89,10 @@ export default function CourseCard({
       {/* Course Info */}
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 600 }}>
-          {course.courses.name} ({course.courses.code})
+{course.courses?.name ?? "Elective Slot"} ({course.courses?.code ?? "ELECTIVE"})
         </div>
         <div style={{ fontSize: 12, opacity: 0.7 }}>
-          Credits: {course.courses.credits}
+Credits: {course.courses?.credits ?? 0}
         </div>
       </div>
 

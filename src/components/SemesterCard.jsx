@@ -1,6 +1,6 @@
 import CourseCard from "./CourseCard";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
-import { useDrop } from "react-dnd";
+import { useDrop, useDragLayer } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
 import { useState } from "react";
@@ -24,12 +24,16 @@ export default function SemesterCard({
   );
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
+  const { isDraggingAny } = useDragLayer((monitor) => ({
+  isDraggingAny: monitor.isDragging(),
+}));
   // Drop zone for courses
   const [{ isOver }, drop] = useDrop({
-    accept: "SIDEBAR_COURSE",
-    drop: async (item) => {
-      if (item.type === "SIDEBAR_COURSE") {
-        onSidebarDrop && onSidebarDrop(item.course, semester.id);
+  accept: ["COURSE", "SIDEBAR_COURSE"],  
+    drop: async (item,monitor) => {
+          const itemType = monitor.getItemType();
+  if (itemType === "SIDEBAR_COURSE") {     
+        onSidebarDrop && onSidebarDrop(item.course, semester.id,item.electiveAttribute);
         return;
       }
       if (item.course.semester_id === semester.id) return; // ignore same semester
@@ -110,7 +114,7 @@ export default function SemesterCard({
     <div
       ref={drop}
       style={{
-        width: "60%",
+        width: "80%",
         margin: "0 auto",
         background: "#fefefe",
         borderRadius: 12,
@@ -278,6 +282,7 @@ export default function SemesterCard({
           flexDirection: "column",
           gap: 10,
           transition: "all 0.2s ease",
+          pointerEvents: isDraggingAny ? "none" : "auto",
         }}
       >
         {semester.user_courses.map((course) => (
@@ -314,9 +319,10 @@ export default function SemesterCard({
           marginTop: 10,
           padding: "8px 12px",
           borderRadius: 8,
-          border: "1px solid #ddd",
-          background: "#111",
-          color: "#fff",
+          border: "1px solid #000",
+          background: "#fff",
+
+          color: "#000",
           cursor: "pointer",
           fontSize: 13,
         }}
@@ -326,11 +332,13 @@ export default function SemesterCard({
 
       {/* SHOW COURSE SELECTOR */}
       {showAddCourses && (
-        <div style={{ marginTop: 16 }}>
-          <Prerequisite
+  <div key={semester.user_courses.length} style={{ marginTop: 16 }}>
+    <Prerequisite
+            key={semester.user_courses.length}
             userId={userId}
             selectedSemesterId={semester.id}
             onCourseRegistered={refresh}
+            courseCount={semester.user_courses.length}
           />
         </div>
       )}

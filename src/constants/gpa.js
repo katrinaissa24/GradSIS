@@ -6,8 +6,8 @@ export function calculateSemesterGPA(courses) {
 
   courses.forEach((c) => {
     if (c.grade && Object.prototype.hasOwnProperty.call(gradePoints, c.grade)) {
-      totalPoints += gradePoints[c.grade] * c.courses.credits;
-      totalCredits += c.courses.credits;
+      totalPoints += gradePoints[c.grade] * (c?.courses?.credits ?? 0);
+      totalCredits += c?.courses?.credits ?? 0;
     }
   });
 
@@ -16,7 +16,7 @@ export function calculateSemesterGPA(courses) {
 }
 
 export function calculateCredits(courses) {
-  return courses.reduce((sum, c) => sum + c.courses.credits, 0);
+  return courses.reduce((sum, c) => sum + (c?.courses?.credits ?? 0), 0);
 }
 
 export function calculateCumulativeGPAWithRepeats(allCourses, semesters) {
