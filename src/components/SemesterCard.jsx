@@ -282,7 +282,6 @@ export default function SemesterCard({
           flexDirection: "column",
           gap: 10,
           transition: "all 0.2s ease",
-          pointerEvents: isDraggingAny ? "none" : "auto",
         }}
       >
         {semester.user_courses.map((course) => (

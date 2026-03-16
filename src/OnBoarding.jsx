@@ -163,99 +163,144 @@ export default function OnBoarding() {
 
 async function saveProfile() {
   if (!isComplete) return;
+
   setLoading(true);
   setError(null);
 
   try {
     // 1️⃣ Get current session and user
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("No active session. Please log in again.");
+    const { data: { session }, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !session)
+      throw new Error("No active session. Please log in again.");
+
     const user = session.user;
 
-    // 2️⃣ Upsert user profile with major and starting term
-    await supabase.from("users").upsert({
-      id: user.id,
-      major_id: profile.major,
-      starting_term_id: profile.startingTerm,
-    });
+    // 2️⃣ Create plan (REQUIRED for user_semesters)
+    const { data: plan, error: planError } = await supabase
+      .from("plans")
+      .insert({
+        user_id: user.id,
+        name: "Default Plan",
+      })
+      .select()
+      .single();
 
-    // 3️⃣ Fetch starting term and template
-    const { data: startingTerm } = await supabase
+    if (planError) throw planError;
+
+    
+    // 3️⃣ Save user major + starting term
+    const { error: userError } = await supabase.from("users").upsert({
+  id: user.id,
+  email: user.email,
+  major_id: profile.major,
+  starting_term_id: profile.startingTerm,
+});
+
+    if (userError) throw userError;
+
+    // 4️⃣ Get starting term info
+    const { data: startingTerm, error: termError } = await supabase
       .from("starting_terms")
       .select("template_id, name")
       .eq("id", profile.startingTerm)
       .single();
-    if (!startingTerm) throw new Error("Starting term not found");
+
+    if (termError || !startingTerm)
+      throw new Error("Starting term not found");
 
     const templateId = startingTerm.template_id;
-const [startSemesterName, academicYear] = startingTerm.name.split(" ");
-let [startYear, endYear] = academicYear.split("-").map(Number);
 
-    // 4️⃣ Fetch template semesters
-    const { data: templateSemesters } = await supabase
-      .from("template_semesters")
-      .select("*")
-      .eq("template_id", templateId);
-    if (!templateSemesters?.length) throw new Error("No template semesters found");
+    const [startSemesterName, academicYear] =
+      startingTerm.name.split(" ");
 
-    // 5️⃣ Generate user_semesters with dynamic names
-const semesterOrder = ["Fall", "Spring", "Summer"];
-const startIndex = semesterOrder.indexOf(startSemesterName);
+    const [startYear, endYear] =
+      academicYear.split("-").map(Number);
 
-const userSemesters = templateSemesters.map((ts, idx) => {
-  const orderIndex = startIndex + idx;
-  const semName = semesterOrder[orderIndex % 3];
+    // 5️⃣ Fetch template semesters
+    const { data: templateSemesters, error: templateError } =
+      await supabase
+        .from("template_semesters")
+        .select("*")
+        .eq("template_id", templateId);
 
-  // Academic year increases AFTER Summer
-  const yearOffset = Math.floor(orderIndex / 3);
-  const currentStartYear = startYear + yearOffset;
-  const currentEndYear = endYear + yearOffset;
+    if (templateError || !templateSemesters?.length)
+      throw new Error("No template semesters found");
 
-  return {
-    user_id: user.id,
-    semester_number: ts.semester_number,
-    name: `${semName} ${currentStartYear}-${currentEndYear}`,
-  };
-});
+    // 6️⃣ Generate user semesters
+    const semesterOrder = ["Fall", "Spring", "Summer"];
+    const startIndex = semesterOrder.indexOf(startSemesterName);
 
-    // 6️⃣ Insert user_semesters
-    const { data: insertedSemesters } = await supabase
-      .from("user_semesters")
-      .insert(userSemesters)
-      .select();
+    const userSemesters = templateSemesters.map((ts, idx) => {
+      const orderIndex = startIndex + idx;
 
-    // 7️⃣ Copy template_courses into user_courses
+      const semName = semesterOrder[orderIndex % 3];
+
+      const yearOffset = Math.floor(orderIndex / 3);
+
+      const currentStartYear = startYear + yearOffset;
+      const currentEndYear = endYear + yearOffset;
+
+      return {
+        user_id: user.id,
+        plan_id: plan.id,
+        semester_number: ts.semester_number,
+        name: `${semName} ${currentStartYear}-${currentEndYear}`,
+      };
+    });
+
+    // 7️⃣ Insert user semesters
+    const { data: insertedSemesters, error: semesterError } =
+      await supabase
+        .from("user_semesters")
+        .insert(userSemesters)
+        .select();
+
+    if (semesterError) throw semesterError;
+
+    // 8️⃣ Copy template courses into user_courses
     for (const ts of templateSemesters) {
-      const { data: templateCourses } = await supabase
-        .from("template_courses")
-        .select("course_id")
-        .eq("template_semester_id", ts.id);
 
-      const userSemester = insertedSemesters.find(
+      const { data: templateCourses, error: courseFetchError } =
+        await supabase
+          .from("template_courses")
+          .select("course_id")
+          .eq("template_semester_id", ts.id);
+
+      if (courseFetchError) throw courseFetchError;
+
+      const userSemester = insertedSemesters?.find(
         (us) => us.semester_number === ts.semester_number
       );
+
       if (!userSemester) continue;
 
       const userCourses = templateCourses.map((tc, idx) => ({
         user_id: user.id,
         semester_id: userSemester.id,
         course_id: tc.course_id,
-        attribute: "Elective", // adjust if needed
+        attribute: "Elective",
         order_index: idx,
       }));
 
-      await supabase.from("user_courses").insert(userCourses);
+      const { error: insertCoursesError } = await supabase
+        .from("user_courses")
+        .insert(userCourses);
+
+      if (insertCoursesError) throw insertCoursesError;
     }
 
-    // ✅ Finished
+    // 9️⃣ Go to dashboard
     navigate("/dashboard");
+
   } catch (err) {
     console.error("Save profile error:", err);
     setError(err.message);
   } finally {
     setLoading(false);
   }
-}
+}  
 
   const academicStandingOptions = [
     { value: "freshman", label: "Freshman" },
