@@ -22,6 +22,10 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [addingSemester, setAddingSemester] = useState(false);
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [newPlanName, setNewPlanName] = useState("");
+  const [addingPlan, setAddingPlan] = useState(false);
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -130,22 +134,50 @@ export default function Dashboard() {
     });
   }
 
-  async function initialize(silent = false) {
+async function initialize(silent = false, planIdOverride = null) {
     if (!silent) setLoading(true);
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
+
       if (!sessionData?.session) {
         navigate("/auth");
         return;
       }
 
-      setAuthUser(sessionData.session.user);
-      const userId = sessionData.session.user.id;
+      const user = sessionData.session.user;
+      setAuthUser(user);
+      const userId = user.id;
+
+      const { data: fetchedPlans, error: plansError } = await supabase
+        .from("plans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true });
+
+      if (plansError) throw plansError;
+
+      const safePlans = fetchedPlans || [];
+      setPlans(safePlans);
+
+      let activePlanId = planIdOverride || selectedPlanId;
+
+      if (!activePlanId && safePlans.length > 0) {
+        activePlanId = safePlans[0].id;
+        setSelectedPlanId(activePlanId);
+      }
+
+      if (!activePlanId) {
+        setSemesters([]);
+        setLoading(false);
+        return;
+      }
 
       const { data: userSemesters, error: semestersError } = await supabase
         .from("user_semesters")
         .select("*")
         .eq("user_id", userId)
+        .eq("plan_id", activePlanId)
         .order("semester_number", { ascending: true });
 
       if (semestersError) throw semestersError;
@@ -158,18 +190,17 @@ export default function Dashboard() {
       if (semesterIds.length > 0) {
         const { data: fetchedCourses, error: coursesError } = await supabase
           .from("user_courses")
-          .select(
-            `
-      *,
-      courses (
-        id, name, code, number, credits,
-        course_eligible_attributes ( attribute )
-      )
-    `,
-          )
+          .select(`
+            *,
+            courses (
+              id, name, code, number, credits,
+              course_eligible_attributes ( attribute )
+            )
+          `)
           .in("semester_id", semesterIds);
 
         if (coursesError) throw coursesError;
+
         userCourses = fetchedCourses || [];
       }
 
@@ -191,11 +222,12 @@ export default function Dashboard() {
 
       setSemesters(formattedSemesters);
       setLoading(false);
+
     } catch (err) {
       console.error(err);
       setLoading(false);
     }
-  }
+    }
 
   async function fetchPrerequisiteCourses() {
     try {
@@ -228,6 +260,12 @@ export default function Dashboard() {
     initialize();
     fetchPrerequisiteCourses();
   }, []);
+
+  useEffect(() => {
+    if (selectedPlanId) {
+      initialize(true, selectedPlanId);
+    }
+  }, [selectedPlanId]);
 
   async function updateSemesterStatus(id, newStatus) {
   setSemesters((prev) =>
@@ -551,6 +589,7 @@ export default function Dashboard() {
         .from("user_semesters")
         .insert({
           user_id: authUser.id,
+          plan_id: selectedPlanId,
           name: trimmedName,
           semester_number: nextSemesterNumber,
           status: "future",
@@ -573,7 +612,46 @@ export default function Dashboard() {
     } finally {
       setAddingSemester(false);
     }
-  }
+    }
+
+    async function handleAddPlan() {
+    const trimmedName = newPlanName.trim();
+
+    if (!trimmedName) {
+    alert("Please enter a plan name.");
+    return;
+    }
+
+    if (!authUser?.id) {
+    alert("User session not ready. Please refresh and try again.");
+    return;
+    }
+
+    try {
+    setAddingPlan(true);
+
+    const { data, error } = await supabase
+      .from("plans")
+      .insert({
+        user_id: authUser.id,
+        name: trimmedName,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setPlans((prev) => [...prev, data]);
+    setSelectedPlanId(data.id);
+    setNewPlanName("");
+
+    } catch (err) {
+    console.error("Error adding plan:", err);
+    alert(err.message || "Failed to add plan.");
+    } finally {
+    setAddingPlan(false);
+    }
+    }
 
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
 
@@ -664,13 +742,76 @@ export default function Dashboard() {
 
         {/* ── Page header ── */}
         <div style={{ padding: "24px 24px 8px 24px" }}>
-          <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
-          <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
-            Plan your past, current and future semesters, track your progress,
-            and explore electives.
-          </div>
-          <br />
-        </div>
+  <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
+
+  <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
+    Plan your past, current and future semesters, track your progress,
+    and explore electives.
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginTop: 14,
+      flexWrap: "wrap",
+    }}
+  >
+    <select
+      value={selectedPlanId}
+      onChange={(e) => setSelectedPlanId(e.target.value)}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #ddd",
+        fontSize: 14,
+        background: "#fff",
+      }}
+    >
+      {plans.map((plan) => (
+        <option key={plan.id} value={plan.id}>
+          {plan.name}
+        </option>
+      ))}
+    </select>
+
+    <input
+      type="text"
+      value={newPlanName}
+      onChange={(e) => setNewPlanName(e.target.value)}
+      placeholder="New plan name"
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #ddd",
+        fontSize: 14,
+        minWidth: 180,
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") handleAddPlan();
+      }}
+    />
+
+    <button
+      onClick={handleAddPlan}
+      disabled={addingPlan}
+      style={{
+        padding: "10px 14px",
+        borderRadius: 10,
+        border: "none",
+        background: "#111",
+        color: "#fff",
+        cursor: "pointer",
+        fontSize: 14,
+      }}
+    >
+      {addingPlan ? "Creating..." : "Create Plan"}
+    </button>
+  </div>
+
+  <br />
+      </div>
 
         <div
           style={{
