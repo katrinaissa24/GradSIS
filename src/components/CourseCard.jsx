@@ -40,9 +40,17 @@ export default function CourseCard({
 
   // Update grade/attribute (optimistic UI)
   async function updateField(field, value) {
-    updateCourse(course.id, field, value);
-    supabase.from("user_courses").update({ [field]: value }).eq("id", course.id);
+  updateCourse(course.id, field, value);
+
+  const { error } = await supabase
+    .from("user_courses")
+    .update({ [field]: value })
+    .eq("id", course.id);
+
+  if (error) {
+    console.error(`Failed to update ${field}:`, error);
   }
+}
 
   // Hide the original card completely when dragging, unless this is the drag preview
   if (isDragging && !dragPreview) return <div style={{ height: ref.current?.offsetHeight || 0 }} />;
@@ -89,8 +97,7 @@ export default function CourseCard({
       {/* Course Info */}
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 600 }}>
-{course.courses?.name ?? "Elective Slot"} ({course.courses?.code ?? "ELECTIVE"})
-        </div>
+{course.courses?.name ?? "Elective Slot"} ({course.courses?.code ?? "ELECTIVE"} {course.courses?.number ?? ""})        </div>
         <div style={{ fontSize: 12, opacity: 0.7 }}>
 Credits: {course.courses?.credits ?? 0}
         </div>

@@ -169,7 +169,7 @@ export default function Dashboard() {
             `
       *,
       courses (
-        id, name, code, credits,
+        id, name, code, number, credits,
         course_eligible_attributes ( attribute )
       )
     `,
@@ -233,11 +233,20 @@ export default function Dashboard() {
     initialize();
     fetchPrerequisiteCourses();
   }, []);
-  function updateSemesterStatus(id, newStatus) {
-    setSemesters((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
-    );
+  async function updateSemesterStatus(id, newStatus) {
+  setSemesters((prev) =>
+    prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
+  );
+
+  const { error } = await supabase
+    .from("user_semesters")
+    .update({ status: newStatus })
+    .eq("id", id);
+
+  if (error) {
+    console.error("Failed to update semester status:", error);
   }
+}
 
   function updateCourseGrade(courseId, field, value) {
     setSemesters((prev) =>
@@ -395,6 +404,7 @@ const attributeToUse = BUCKET_TO_ATTRIBUTE[electiveAttribute] || (course && !ele
         id: course.id,
         name: course.name,
         code: course.code,
+        number: course.number,
         credits: course.credits,
         course_eligible_attributes: course.course_eligible_attributes || [],
       } : {
@@ -428,7 +438,7 @@ const attributeToUse = BUCKET_TO_ATTRIBUTE[electiveAttribute] || (course && !ele
         `
       *,
       courses (
-        id, name, code, credits,
+        id, name, code, number, credits,
         course_eligible_attributes ( attribute )
       )
     `,
