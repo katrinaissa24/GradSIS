@@ -24,24 +24,34 @@ export default function SemesterCard({
   );
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
+  const [loadMode, setLoadMode] = useState(semester.load_mode || "normal");
+  const [savingLoadPrefs, setSavingLoadPrefs] = useState(false);
+
+  const LOAD_LIMITS = { underload: 11, normal: 17, overload: 21 };
+  const targetCredits = LOAD_LIMITS[loadMode] ?? 17;
+
   const { isDraggingAny } = useDragLayer((monitor) => ({
-  isDraggingAny: monitor.isDragging(),
-}));
-  // Drop zone for courses
+    isDraggingAny: monitor.isDragging(),
+  }));
+
   const [{ isOver }, drop] = useDrop({
-  accept: ["COURSE", "SIDEBAR_COURSE"],  
-    drop: async (item,monitor) => {
-          const itemType = monitor.getItemType();
-  if (itemType === "SIDEBAR_COURSE") {     
-        onSidebarDrop && onSidebarDrop(item.course, semester.id);
+    accept: ["COURSE", "SIDEBAR_COURSE"],
+    drop: async (item, monitor) => {
+      const itemType = monitor.getItemType();
+      if (itemType === "SIDEBAR_COURSE") {
+        onSidebarDrop &&
+          onSidebarDrop(
+            item.course,
+            semester.id,
+            item.electiveAttribute,
+            Number(targetCredits) || 15,
+          );
         return;
       }
-      if (item.course.semester_id === semester.id) return; // ignore same semester
+      if (item.course.semester_id === semester.id) return;
 
-      // Update local state in Dashboard
       moveCourse(item.course.id, item.course.semester_id, semester.id);
 
-      // Update backend
       await supabase
         .from("user_courses")
         .update({ semester_id: semester.id })
@@ -57,6 +67,29 @@ export default function SemesterCard({
     present: "#10b981",
     future: "#2563eb",
   };
+
+  async function saveSemesterLoadPreferences() {
+    try {
+      setSavingLoadPrefs(true);
+
+      const { error } = await supabase
+        .from("user_semesters")
+        .update({
+          load_mode: loadMode,
+          target_credits: targetCredits,
+        })
+        .eq("id", semester.id);
+
+      if (error) throw error;
+
+      await refresh(true);
+    } catch (err) {
+      console.error("Error saving semester load preferences:", err);
+    } finally {
+      setSavingLoadPrefs(false);
+    }
+  }
+
   async function handleRenameSemester() {
     const trimmedName = editedSemesterName.trim();
     if (!trimmedName) return;
@@ -87,6 +120,7 @@ export default function SemesterCard({
       `Are you sure you want to delete "${semester.name}"?`,
     );
     if (!confirmed) return;
+
     try {
       setDeletingSemester(true);
 
@@ -128,6 +162,7 @@ export default function SemesterCard({
         backgroundColor: isOver ? "#f1f5f9" : "#fefefe",
       }}
     >
+      {/* ── Header: name + rename/delete ── */}
       <div
         style={{
           display: "flex",
@@ -168,7 +203,6 @@ export default function SemesterCard({
                 }
               }}
             />
-
             <button
               onClick={handleRenameSemester}
               disabled={savingSemesterName}
@@ -184,7 +218,6 @@ export default function SemesterCard({
             >
               {savingSemesterName ? "Saving..." : "Save"}
             </button>
-
             <button
               onClick={() => {
                 setEditedSemesterName(semester.name || "");
@@ -206,7 +239,6 @@ export default function SemesterCard({
             <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
               {semester.name}
             </h3>
-
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => setIsEditingSemesterName(true)}
@@ -221,7 +253,6 @@ export default function SemesterCard({
               >
                 Rename
               </button>
-
               <button
                 onClick={handleDeleteSemester}
                 disabled={deletingSemester || semester.status !== "future"}
@@ -249,6 +280,7 @@ export default function SemesterCard({
         )}
       </div>
 
+      {/* ── Status buttons ── */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         {["previous", "present", "future"].map((status) => {
           const isActive = semester.status === status;
@@ -276,6 +308,60 @@ export default function SemesterCard({
         })}
       </div>
 
+      {/* ── Load preference ── */}
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "center",
+          flexWrap: "wrap",
+          marginBottom: 10,
+          padding: "10px 12px",
+          border: "1px solid #eee",
+          borderRadius: 10,
+          background: "#fafafa",
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13 }}>Load</span>
+
+        <select
+          value={loadMode}
+          onChange={(e) => {
+            setLoadMode(e.target.value);
+          }}
+          style={{
+            padding: "7px 10px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            fontSize: 13,
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          <option value="underload">Underload (≤ 11 cr)</option>
+          <option value="normal">Normal (12 – 17 cr)</option>
+          <option value="overload">Overload (≥ 18 cr)</option>
+        </select>
+
+        <button
+          onClick={saveSemesterLoadPreferences}
+          disabled={savingLoadPrefs}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 8,
+            border: "none",
+            background: "#111",
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: 13,
+            opacity: savingLoadPrefs ? 0.7 : 1,
+          }}
+        >
+          {savingLoadPrefs ? "Saving..." : "Save"}
+        </button>
+      </div>
+
+      {/* ── Course list ── */}
       <div
         style={{
           display: "flex",
@@ -295,6 +381,7 @@ export default function SemesterCard({
         ))}
       </div>
 
+      {/* ── Footer stats ── */}
       <div
         style={{
           marginTop: 12,
@@ -305,13 +392,14 @@ export default function SemesterCard({
         }}
       >
         <div>
-          Total Credits: <b>{credits}</b>
+          Total Credits: <b>{credits}</b> / <b>{targetCredits}</b>
         </div>
         <div>
           Semester GPA: <b>{gpa}</b>
         </div>
       </div>
-      {/* ADD COURSE BUTTON */}
+
+      {/* ── Add course toggle ── */}
       <button
         onClick={() => setShowAddCourses((prev) => !prev)}
         style={{
@@ -320,7 +408,6 @@ export default function SemesterCard({
           borderRadius: 8,
           border: "1px solid #000",
           background: "#fff",
-
           color: "#000",
           cursor: "pointer",
           fontSize: 13,
@@ -329,13 +416,15 @@ export default function SemesterCard({
         {showAddCourses ? "Close" : "+ Add Course"}
       </button>
 
-      {/* SHOW COURSE SELECTOR */}
       {showAddCourses && (
-        <div style={{ marginTop: 16 }}>
+        <div key={semester.user_courses.length} style={{ marginTop: 16 }}>
           <Prerequisite
+            key={semester.user_courses.length}
             userId={userId}
             selectedSemesterId={semester.id}
             onCourseRegistered={refresh}
+            courseCount={semester.user_courses.length}
+            targetCredits={Number(targetCredits)}
           />
         </div>
       )}

@@ -5,7 +5,11 @@ import { useNavigate } from "react-router-dom";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
-import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
+import {
+  calculateSemesterGPA,
+  calculateCredits,
+  calculateCumulativeGPAWithRepeats,
+} from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
 import { useDragLayer } from "react-dnd";
@@ -18,12 +22,15 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [addingSemester, setAddingSemester] = useState(false);
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
   const navigate = useNavigate();
 
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
   }
+
   const PASSING_GRADES = new Set([
     "A+",
     "A",
@@ -76,27 +83,29 @@ export default function Dashboard() {
   }
 
   function calcElectivesProgress(semesters) {
-    const EXCLUDED = new Set(["F", "W", "FAIL"]); // don't count failed/withdrawn
+    const EXCLUDED = new Set(["F", "W", "FAIL"]);
     const counted = [];
     for (const sem of semesters) {
       for (const uc of sem.user_courses || []) {
-        // skip failed/withdrawn
         if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
 
-        const credits = uc?.courses?.credits ?? 0;
-        if (!credits) continue;
+        let credits = uc?.courses?.credits ?? 0;
+        if (!credits) {
+          if (uc.course_id === null && uc.attribute) {
+            const bucket = ATTRIBUTE_TO_BUCKET[uc.attribute];
+            credits = bucket ? 3 : 0;
+          }
+          if (!credits) continue;
+        }
 
-        // eligible attributes coming from the join table we filled
         const eligibleAttrs = (uc?.courses?.course_eligible_attributes || [])
           .map((x) => x.attribute)
           .filter(Boolean);
 
-        // fallback: if none exist, use the single attribute
         const attrsToUse = eligibleAttrs.length
           ? eligibleAttrs
           : [uc?.attribute].filter(Boolean);
 
-        // convert attributes -> your UI bucket names
         const eligibleBuckets = [
           ...new Set(
             attrsToUse.map((a) => ATTRIBUTE_TO_BUCKET[a]).filter(Boolean),
@@ -105,18 +114,12 @@ export default function Dashboard() {
 
         if (!eligibleBuckets.length) continue;
 
-        counted.push({
-          id: uc.id,
-          credits,
-          eligibleBuckets, // <-- this is what allows switching
-        });
+        counted.push({ id: uc.id, credits, eligibleBuckets });
       }
     }
 
-    // run optimizer
     const { earned } = autoAssignBuckets(counted, ELECTIVE_REQUIREMENTS);
 
-    // return your UI rows
     return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
       const e = earned[bucket] || 0;
       return {
@@ -129,23 +132,65 @@ export default function Dashboard() {
     });
   }
 
-  async function initialize() {
-    setLoading(true);
+async function initialize(silent = false, planIdOverride = null) {
+    if (!silent) setLoading(true);
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
+
       if (!sessionData?.session) {
         navigate("/auth");
         return;
       }
 
-      setAuthUser(sessionData.session.user);
+      const user = sessionData.session.user;
+      setAuthUser(user);
+      const userId = user.id;
 
-      const userId = sessionData.session.user.id;
+      const { data: fetchedPlans, error: plansError } = await supabase
+        .from("plans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true });
+
+      if (plansError) throw plansError;
+
+      let safePlans = fetchedPlans || [];
+
+      if (safePlans.length === 0) {
+        const { data: createdPlans, error: createError } = await supabase
+          .from("plans")
+          .insert([
+            { user_id: userId, name: "Plan A" },
+            { user_id: userId, name: "Plan B" },
+          ])
+          .select();
+
+        if (createError) throw createError;
+
+        safePlans = createdPlans;
+      }
+
+      setPlans(safePlans);
+
+      let activePlanId = planIdOverride || selectedPlanId;
+
+      if (!activePlanId && safePlans.length > 0) {
+        activePlanId = safePlans[0].id;
+        setSelectedPlanId(activePlanId);
+      }
+
+      if (!activePlanId) {
+        setSemesters([]);
+        setLoading(false);
+        return;
+      }
 
       const { data: userSemesters, error: semestersError } = await supabase
         .from("user_semesters")
         .select("*")
         .eq("user_id", userId)
+        .eq("plan_id", activePlanId)
         .order("semester_number", { ascending: true });
 
       if (semestersError) throw semestersError;
@@ -158,33 +203,45 @@ export default function Dashboard() {
       if (semesterIds.length > 0) {
         const { data: fetchedCourses, error: coursesError } = await supabase
           .from("user_courses")
-          .select(
-            `
-      *,
-      courses (
-        id, name, code, credits,
-        course_eligible_attributes ( attribute )
-      )
-    `,
-          )
+          .select(`
+            *,
+            courses (
+              id, name, code, number, credits,
+              course_eligible_attributes ( attribute )
+            )
+          `)
           .in("semester_id", semesterIds);
 
         if (coursesError) throw coursesError;
+
         userCourses = fetchedCourses || [];
       }
 
       const formattedSemesters = safeSemesters.map((sem) => ({
         ...sem,
-        user_courses: userCourses.filter((c) => c.semester_id === sem.id),
+        user_courses: userCourses
+          .filter((c) => c.semester_id === sem.id)
+          .map((uc) => ({
+            ...uc,
+            courses: uc.courses ?? {
+              id: null,
+              name: uc.attribute,
+              code: "ELECTIVE",
+              credits: 3,
+              course_eligible_attributes: [],
+            },
+          })),
       }));
 
       setSemesters(formattedSemesters);
       setLoading(false);
+
     } catch (err) {
       console.error(err);
       setLoading(false);
     }
-  }
+    }
+
   async function fetchPrerequisiteCourses() {
     try {
       const { data: prereqRows, error } = await supabase.from("prerequisites")
@@ -216,13 +273,31 @@ export default function Dashboard() {
     initialize();
     fetchPrerequisiteCourses();
   }, []);
-  function updateSemesterStatus(id, newStatus) {
-    setSemesters((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
-    );
-  }
 
-  function updateCourseGrade(courseId, field, value) {
+  useEffect(() => {
+    if (selectedPlanId) {
+      initialize(true, selectedPlanId);
+    }
+  }, [selectedPlanId]);
+
+  async function updateSemesterStatus(id, newStatus) {
+  setSemesters((prev) =>
+    prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
+  );
+
+  const { error } = await supabase
+    .from("user_semesters")
+    .update({ status: newStatus })
+    .eq("id", id)
+    .eq("user_id", authUser.id);
+
+  if (error) {
+    console.error("Failed to update semester status:", error);
+    await initialize();
+  }
+}
+
+  async function updateCourseGrade(courseId, field, value) {
     setSemesters((prev) =>
       prev.map((sem) => ({
         ...sem,
@@ -231,6 +306,25 @@ export default function Dashboard() {
         ),
       })),
     );
+
+    const updates = { [field]: value };
+
+    if (field === "grade") {
+      if (value === "W" || value === "WF") {
+        updates.status = "dropped";
+      } else {
+        updates.status = "completed";
+      }
+    }
+
+    const { error } = await supabase
+      .from("user_courses")
+      .update(updates)
+      .eq("id", courseId);
+
+    if (error) {
+      console.error("Failed to update course:", error);
+    }
   }
 
   function moveCourse(courseId, fromSemesterId, toSemesterId) {
@@ -265,8 +359,8 @@ export default function Dashboard() {
       });
     });
   }
+
   async function deleteCourse(courseId) {
-    // Optimistic UI update
     setSemesters((prev) =>
       prev.map((sem) => ({
         ...sem,
@@ -274,32 +368,148 @@ export default function Dashboard() {
       })),
     );
 
-    // Delete from database
     await supabase.from("user_courses").delete().eq("id", courseId);
   }
-  async function handleSidebarDrop(course, semesterId) {
-    // 1. Duplicate check — bail if already in this semester
-    const targetSem = semesters.find((s) => s.id === semesterId);
-    const alreadyEnrolled = targetSem?.user_courses?.some(
-      (uc) => uc.course_id === course.id,
-    );
-    if (alreadyEnrolled) return;
 
-    // 2. Optimistic insert with temp id
+  // semesterTargetCredits comes from SemesterCard's own targetCredits state,
+  // passed up through the drop handler — no stale LOAD_LIMITS lookup needed.
+  async function handleSidebarDrop(
+    course,
+    semesterId,
+    electiveAttribute,
+    semesterTargetCredits = 15,
+  ) {
+    console.log("DROP:", course, semesterId, electiveAttribute);
+
+    if (course) {
+      const targetSem = semesters.find((s) => s.id === semesterId);
+      const alreadyEnrolled = targetSem?.user_courses?.some(
+        (uc) => uc.course_id === course.id,
+      );
+      if (alreadyEnrolled) return;
+
+      const { data: prereqs, error: prereqError } = await supabase
+        .from("prerequisites")
+        .select("prereq_course_id")
+        .eq("course_id", course.id);
+
+      if (prereqError) {
+        alert("Error checking prerequisites.");
+        return;
+      }
+
+      if (prereqs?.length > 0) {
+        const { data: enrolledData } = await supabase
+          .from("user_courses")
+          .select("course_id")
+          .eq("user_id", authUser.id);
+        const enrolledCourseIds = (enrolledData || [])
+          .map((uc) => uc.course_id)
+          .filter(Boolean);
+
+        const missing = prereqs.filter(
+          (p) => !enrolledCourseIds.includes(p.prereq_course_id),
+        );
+
+        if (missing.length > 0) {
+          const { data: missingCourses } = await supabase
+            .from("courses")
+            .select("id, code, number, name")
+            .in(
+              "id",
+              missing.map((m) => m.prereq_course_id),
+            );
+
+          alert(
+            `Missing prerequisites: ${(missingCourses || [])
+              .map((c) => `${c.code} ${c.number} – ${c.name}`)
+              .join(", ")}`,
+          );
+          return;
+        }
+      }
+
+      const { data: semData } = await supabase
+        .from("user_semesters")
+        .select("semester_number")
+        .eq("id", semesterId)
+        .single();
+
+      if (course.req_sem && semData?.semester_number < course.req_sem) {
+        alert(
+          `This course is intended for semester ${course.req_sem} or later.`,
+        );
+        return;
+      }
+
+      const targetSemCourses =
+        semesters.find((s) => s.id === semesterId)?.user_courses || [];
+      const currentCredits = targetSemCourses.reduce(
+        (sum, uc) => sum + (uc?.courses?.credits ?? 0),
+        0,
+      );
+
+      if (currentCredits + (course.credits ?? 0) > semesterTargetCredits) {
+        alert(
+          `Cannot add: would exceed your target of ${semesterTargetCredits} credits for this semester.`,
+        );
+        return;
+      }
+    }
+
+    if (!course) {
+      const targetSemCourses =
+        semesters.find((s) => s.id === semesterId)?.user_courses || [];
+      const currentCredits = targetSemCourses.reduce(
+        (sum, uc) => sum + (uc?.courses?.credits ?? 0),
+        0,
+      );
+
+      if (currentCredits + 3 > semesterTargetCredits) {
+        alert(
+          `Cannot add: would exceed your target of ${semesterTargetCredits} credits for this semester.`,
+        );
+        return;
+      }
+    }
+
+    const BUCKET_TO_ATTRIBUTE = {
+      "Community Engaged Learning": "CEL",
+      "Cultures and Histories": "Cultures & Histories",
+      "Societies and Individuals": "Societies & Individuals",
+      "Human Values": "Human Values",
+      "Understanding the World": "Understanding the World",
+      "Technical Elective": "Elective",
+    };
+
+    const attributeToUse =
+      BUCKET_TO_ATTRIBUTE[electiveAttribute] ||
+      (course && !electiveAttribute ? "Major Course" : electiveAttribute) ||
+      "Elective";
+
     const tempId = `temp-${Date.now()}`;
     const optimisticEntry = {
       id: tempId,
-      course_id: course.id,
+      course_id: course?.id ?? null,
       semester_id: semesterId,
-      attribute: "Major Course", 
+      attribute: attributeToUse,
       grade: null,
-      courses: {
-        id: course.id,
-        name: course.name,
-        code: course.code,
-        credits: course.credits,
-        course_eligible_attributes: course.course_eligible_attributes || [],
-      },
+      courses: course
+  ? {
+      id: course.id,
+      name: course.name,
+      code: course.code,
+      number: course.number,
+      credits: course.credits,
+      course_eligible_attributes: course.course_eligible_attributes || [],
+    }
+  : {
+      id: null,
+      name: attributeToUse,
+      code: "ELECTIVE",
+      credits: 3,
+      course_eligible_attributes: [],
+    },
     };
 
     setSemesters((prev) =>
@@ -310,30 +520,25 @@ export default function Dashboard() {
       ),
     );
 
-    // 3. Persist to Supabase
     const { data, error } = await supabase
       .from("user_courses")
       .insert({
         user_id: authUser.id,
-        course_id: course.id,
+        course_id: course?.id ?? null,
         semester_id: semesterId,
         grade: null,
-        attribute: "Major Course",
+        attribute: attributeToUse,
       })
-      .select(
-        `
-      *,
-      courses (
-        id, name, code, credits,
-        course_eligible_attributes ( attribute )
-      )
-    `,
-      )
-      .single();
-    console.log("RAW RESPONSE:", { data, error }); 
+      .select(`
+  *,
+  courses (
+    id, name, code, number, credits,
+    course_eligible_attributes ( attribute )
+  )
+`)
+.single();
 
     if (error) {
-      // 4. Roll back on failure
       console.error("Failed to add course:", error);
       setSemesters((prev) =>
         prev.map((sem) =>
@@ -348,14 +553,24 @@ export default function Dashboard() {
       return;
     }
 
-    // 5. Replace temp entry with real DB row
     setSemesters((prev) =>
       prev.map((sem) =>
         sem.id === semesterId
           ? {
               ...sem,
               user_courses: sem.user_courses.map((uc) =>
-                uc.id === tempId ? data : uc,
+                uc.id === tempId
+                  ? {
+                      ...data,
+                      courses: data.courses ?? {
+                        id: null,
+                        name: attributeToUse,
+                        code: "ELECTIVE",
+                        credits: 3,
+                        course_eligible_attributes: [],
+                      },
+                    }
+                  : uc,
               ),
             }
           : sem,
@@ -387,28 +602,22 @@ export default function Dashboard() {
         .from("user_semesters")
         .insert({
           user_id: authUser.id,
+          plan_id: selectedPlanId,
           name: trimmedName,
           semester_number: nextSemesterNumber,
           status: "future",
+          load_mode: "normal",
+          target_credits: 15,
         })
         .select()
         .single();
-
-      console.log("Added semester:", data);
 
       if (error) {
         console.error("Add semester error:", error);
         throw error;
       }
 
-      setSemesters((prev) => [
-        ...prev,
-        {
-          ...data,
-          user_courses: [],
-        },
-      ]);
-
+      setSemesters((prev) => [...prev, { ...data, user_courses: [] }]);
       setNewSemesterName("");
     } catch (err) {
       console.error("Error adding semester:", err);
@@ -416,10 +625,12 @@ export default function Dashboard() {
     } finally {
       setAddingSemester(false);
     }
-  }
+    }
+
+
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
 
-  const totalGPA = calculateSemesterGPA(allCourses);
+  const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateCredits(allCourses);
 
   const { completed } = calcCredits(semesters);
@@ -437,321 +648,328 @@ export default function Dashboard() {
   if (loading) {
     return <div style={{ padding: 20 }}>Initializing...</div>;
   }
-  
+
   return (
-  <DndProvider backend={HTML5Backend}>
-    <CustomDragLayer />
+    <DndProvider backend={HTML5Backend}>
+      <CustomDragLayer />
 
-    <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
-
-      {/* NAVBAR */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 300,
-          background: "#fff",
-          borderBottom: "1px solid #e5e7eb",
-          padding: "14px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between"
-        }}
-      >
-        {/* LEFT */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <button
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              gap: 5
-            }}
-          >
-            <span style={{ width: 22, height: 2, background: "#111" }} />
-            <span style={{ width: 22, height: 2, background: "#111" }} />
-            <span style={{ width: 22, height: 2, background: "#111" }} />
-          </button>
-
-          <span style={{ fontWeight: 600, fontSize: 25 }}>
-            GradSIS
-          </span>
-        </div>
-
-        {/* RIGHT */}
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-
-          <div style={{ fontSize: 13, color: "#444", textAlign: "right" }}>
-            <div style={{ fontWeight: 600 }}>
-              {authUser?.name || authUser?.email}
-            </div>
-
-            <div>
-              GPA <b>{totalGPA}</b> • Hours <b>{totalHours}</b>
-            </div>
-
-            <div>
-              Credits <b>{completed}</b> / {total}
-            </div>
-          </div>
-
-          <button
-            onClick={handleSignOut}
-            style={{
-              padding: "7px 14px",
-              borderRadius: 8,
-              border: "1px solid #ddd",
-              background: "#fafafa",
-              cursor: "pointer",
-              fontSize: 13
-            }}
-          >
-            Sign Out
-          </button>
-
-        </div>
-      </div>
-
-
-      {/* PAGE HEADER */}
-      <div style={{ padding: "24px 24px 8px 24px" }}>
-        <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
-        <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
-          Plan your past, current and future semesters, track your progress, and explore electives.
-        </div>
-        <br></br>
-      </div>
-
-
-      <div
-        style={{
-          display: "flex",
-          gap: 24,
-          alignItems: "flex-start",
-          padding: "0 24px 24px 24px"
-        }}
-      >
-
-        {sidebarOpen && (
-          <SidebarOverlay onClose={() => setSidebarOpen(false)} />
-        )}
-
-
-        {/* SIDEBAR */}
+      <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
+        {/* ── Top nav ── */}
         <div
           style={{
-            position: "fixed",
+            position: "sticky",
             top: 0,
-            left: 0,
-            height: "100vh",
-            width: 280,
+            zIndex: 300,
             background: "#fff",
-            boxShadow: "4px 0 20px rgba(0,0,0,0.12)",
-            zIndex: 400,
-            transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
-            transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
+            borderBottom: "1px solid #e5e7eb",
+            padding: "14px 24px",
             display: "flex",
-            flexDirection: "column"
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "16px 14px",
-              borderBottom: "1px solid #f1f5f9"
-            }}
-          >
-            <span style={{ fontWeight: 700, fontSize: 14 }}>
-              Course Catalog
-            </span>
-
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => setSidebarOpen((prev) => !prev)}
               style={{
                 background: "none",
                 border: "none",
-                fontSize: 20,
                 cursor: "pointer",
-                color: "#6b7280"
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
               }}
             >
-              ×
+              <span style={{ width: 22, height: 2, background: "#111" }} />
+              <span style={{ width: 22, height: 2, background: "#111" }} />
+              <span style={{ width: 22, height: 2, background: "#111" }} />
             </button>
+            <span style={{ fontWeight: 600, fontSize: 25 }}>GradSIS</span>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            <PrerequisiteSidebar
-              courses={prerequisiteCourses}
-              enrolledCourseIds={
-                new Set(allCourses.map((uc) => uc.course_id))
-              }
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <div style={{ fontSize: 13, color: "#444", textAlign: "right" }}>
+              <div style={{ fontWeight: 600 }}>
+                {authUser?.name || authUser?.email}
+              </div>
+              <div>
+                GPA <b>{totalGPA}</b> • Hours <b>{totalHours}</b>
+              </div>
+              <div>
+                Credits <b>{completed}</b> / {total}
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              style={{
+                padding: "7px 14px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                background: "#fafafa",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Sign Out
+            </button>
           </div>
         </div>
 
+        {/* ── Page header ── */}
+        <div style={{ padding: "24px 24px 8px 24px" }}>
+  <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
 
-        {/* SEMESTERS */}
+  <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
+    Plan your past, current and future semesters, track your progress,
+    and explore electives.
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginTop: 14,
+      flexWrap: "wrap",
+    }}
+  >
+    <select
+      value={selectedPlanId}
+      onChange={(e) => setSelectedPlanId(e.target.value)}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #ddd",
+        fontSize: 14,
+        background: "#fff",
+      }}
+    >
+      {plans.map((plan) => (
+        <option key={plan.id} value={plan.id}>
+          {plan.name}
+        </option>
+      ))}
+    </select>
+
+  </div>
+
+  <br />
+      </div>
+
         <div
           style={{
-            flex: 1,
             display: "flex",
-            flexDirection: "column",
-            gap: 20
+            gap: 24,
+            alignItems: "flex-start",
+            padding: "0 24px 24px 24px",
           }}
         >
-          {semesters.map((sem) => (
-            <SemesterCard
-              key={sem.id}
-              semester={sem}
-              userId={authUser?.id}
-              refresh={initialize}
-              updateStatus={updateSemesterStatus}
-              updateCourse={updateCourseGrade}
-              moveCourse={moveCourse}
-              deleteCourse={deleteCourse}
-              onSidebarDrop={handleSidebarDrop}
-            />
-          ))}
+          {sidebarOpen && (
+            <SidebarOverlay onClose={() => setSidebarOpen(false)} />
+          )}
 
-
-          {/* ADD SEMESTER — moved to bottom */}
+          {/* ── Slide-out catalog sidebar ── */}
           <div
             style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              height: "100vh",
+              width: 280,
               background: "#fff",
-              border: "1px solid #eee",
-              borderRadius: 14,
-              padding: 16,
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              boxShadow: "4px 0 20px rgba(0,0,0,0.12)",
+              zIndex: 400,
+              transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+              transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
               display: "flex",
-              gap: 10,
-              alignItems: "center"
-            }}
-          >
-            <input
-              type="text"
-              value={newSemesterName}
-              onChange={(e) => setNewSemesterName(e.target.value)}
-              placeholder="Enter new semester name"
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                fontSize: 14
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAddSemester();
-              }}
-            />
-
-            <button
-              onClick={handleAddSemester}
-              disabled={addingSemester}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#111",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: 14
-              }}
-            >
-              {addingSemester ? "Adding..." : "Add Semester"}
-            </button>
-          </div>
-
-        </div>
-
-
-        {/* ELECTIVES TRACKER */}
-        <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
-          <div
-            style={{
-              background: "white",
-              borderRadius: 14,
-              padding: 14,
-              border: "1px solid #eee",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)"
+              flexDirection: "column",
             }}
           >
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                marginBottom: 10
+                alignItems: "center",
+                padding: "16px 14px",
+                borderBottom: "1px solid #f1f5f9",
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: 14 }}>
-                Electives
+              <span style={{ fontWeight: 700, fontSize: 14 }}>
+                Course Catalog
               </span>
-
-              <span style={{ fontSize: 12, color: "#666" }}>
-                {electivesRemainingTotal} left
-              </span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  color: "#6b7280",
+                }}
+              >
+                ×
+              </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {electiveRows.map((r) => (
-                <div
-                  key={r.bucket}
-                  style={{
-                    border: "1px solid #f0f0f0",
-                    borderRadius: 10,
-                    padding: 10
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 12
-                    }}
-                  >
-                    <span style={{ fontWeight: 600 }}>
-                      {r.bucket}
-                    </span>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <PrerequisiteSidebar
+                courses={prerequisiteCourses}
+                enrolledCourseIds={
+                  new Set(allCourses.map((uc) => uc.course_id))
+                }
+                electiveRows={electiveRows}
+                allUserCourses={allCourses}
+              />
+            </div>
+          </div>
 
-                    <span>
-                      {r.earned}/{r.required}
-                    </span>
-                  </div>
+          {/* ── Semester list ── */}
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
+            }}
+          >
+            {semesters.map((sem) => (
+              <SemesterCard
+                key={sem.id + "-" + sem.user_courses.length}
+                semester={sem}
+                userId={authUser?.id}
+                refresh={initialize}
+                updateStatus={updateSemesterStatus}
+                updateCourse={updateCourseGrade}
+                moveCourse={moveCourse}
+                deleteCourse={deleteCourse}
+                onSidebarDrop={handleSidebarDrop}
+              />
+            ))}
 
+            {/* ── Add semester ── */}
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #eee",
+                borderRadius: 14,
+                padding: 16,
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              <input
+                type="text"
+                value={newSemesterName}
+                onChange={(e) => setNewSemesterName(e.target.value)}
+                placeholder="Enter new semester name"
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #ddd",
+                  fontSize: 14,
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddSemester();
+                }}
+              />
+              <button
+                onClick={handleAddSemester}
+                disabled={addingSemester}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#111",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                {addingSemester ? "Adding..." : "Add Semester"}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Electives panel ── */}
+          <div
+            style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: 14,
+                padding: 14,
+                border: "1px solid #eee",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 10,
+                }}
+              >
+                <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
+                <span style={{ fontSize: 12, color: "#666" }}>
+                  {electivesRemainingTotal} left
+                </span>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {electiveRows.map((r) => (
                   <div
+                    key={r.bucket}
                     style={{
-                      height: 6,
-                      background: "#eee",
-                      borderRadius: 999,
-                      marginTop: 6
+                      border: "1px solid #f0f0f0",
+                      borderRadius: 10,
+                      padding: 10,
                     }}
                   >
                     <div
                       style={{
-                        height: 6,
-                        width: `${r.pct}%`,
-                        background: "#111",
-                        borderRadius: 999
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 12,
                       }}
-                    />
+                    >
+                      <span style={{ fontWeight: 600 }}>{r.bucket}</span>
+                      <span>
+                        {r.earned}/{r.required}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        background: "#eee",
+                        borderRadius: 999,
+                        marginTop: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: 6,
+                          width: `${r.pct}%`,
+                          background: "#111",
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
-
       </div>
-    </div>
-  </DndProvider>
-);
-    
+    </DndProvider>
+  );
 }
- function SidebarOverlay({ onClose }) {
+
+function SidebarOverlay({ onClose }) {
   const isDragging = useDragLayer((monitor) => monitor.isDragging());
   return (
     <div
