@@ -6,10 +6,10 @@ export default function Prerequisite({
   userId,
   selectedSemesterId,
   onCourseRegistered,
-  courseCount,
-
+  targetCredits = 17,
 }) {
-  const [userCourseIds, setUserCourseIds] = useState([]);
+  const [passedCourseIds, setPassedCourseIds] = useState([]);
+  const [blockedCourseIds, setBlockedCourseIds] = useState([]);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [semesterCredits, setSemesterCredits] = useState(0);
@@ -20,14 +20,30 @@ export default function Prerequisite({
   const [selectedCourse, setSelectedCourse] = useState(null);
 
   const MIN_CREDITS = 12;
-  const MAX_CREDITS = 17;
+  const MAX_CREDITS = targetCredits;
+
+  const PASSED_GRADES = [
+    "A+",
+    "A",
+    "A-",
+    "B+",
+    "B",
+    "B-",
+    "C+",
+    "C",
+    "C-",
+    "D+",
+    "D",
+    "D-",
+    "PASS",
+  ];
 
   const fetchUserCourses = useCallback(async () => {
     if (!userId) return;
 
     const { data, error } = await supabase
       .from("user_courses")
-      .select("course_id")
+      .select("course_id, grade, status")
       .eq("user_id", userId)
       .neq("status", "dropped");
 
@@ -36,7 +52,20 @@ export default function Prerequisite({
       return;
     }
 
-    setUserCourseIds([...new Set((data || []).map((c) => c.course_id))]);
+    const passedIds = (data || [])
+      .filter((c) => PASSED_GRADES.includes(c.grade))
+      .map((c) => c.course_id);
+
+    const blockedIds = (data || [])
+      .filter((c) => {
+        const isCurrentlyEnrolled = !c.grade || c.grade === "";
+        const isPassed = PASSED_GRADES.includes(c.grade);
+        return isCurrentlyEnrolled || isPassed;
+      })
+      .map((c) => c.course_id);
+
+    setPassedCourseIds([...new Set(passedIds)]);
+    setBlockedCourseIds([...new Set(blockedIds)]);
   }, [userId]);
 
   const fetchSemesterCredits = useCallback(
@@ -44,11 +73,11 @@ export default function Prerequisite({
       if (!userId || !semesterId) return;
 
       const { data: enrollments, error: enrollError } = await supabase
-  .from("user_courses")
-  .select("course_id")
-  .eq("user_id", userId)
-  .eq("semester_id", semesterId)
-  .or("status.neq.dropped,status.is.null");
+        .from("user_courses")
+        .select("course_id")
+        .eq("user_id", userId)
+        .eq("semester_id", semesterId)
+        .neq("status", "dropped");
 
       if (enrollError) {
         console.error(enrollError);
@@ -60,30 +89,25 @@ export default function Prerequisite({
         checkCreditWarning(0);
         return;
       }
-console.log("enrollments:", enrollments);
-console.log("nonNullEnrollments:", enrollments.filter(e => e.course_id !== null));
-console.log("placeholders:", enrollments.filter(e => e.course_id === null).length);
- const nonNullEnrollments = enrollments.filter((e) => e.course_id !== null);
-let total = 0;
 
-if (nonNullEnrollments.length > 0) {
-  const { data: enrolledCourses, error: coursesError } = await supabase
-    .from("courses")
-    .select("credits")
-    .in("id", nonNullEnrollments.map((e) => e.course_id));
+      const { data: enrolledCourses, error: coursesError } = await supabase
+        .from("courses")
+        .select("credits")
+        .in(
+          "id",
+          enrollments.map((e) => e.course_id),
+        );
 
-  if (coursesError) {
-    console.error(coursesError);
-    return;
-  }
+      if (coursesError) {
+        console.error(coursesError);
+        return;
+      }
 
-  total = (enrolledCourses || []).reduce(
-    (sum, c) => sum + (c.credits || 0), 0
-  );
-}
+      const total = (enrolledCourses || []).reduce(
+        (sum, c) => sum + (c.credits || 0),
+        0,
+      );
 
-const electivePlaceholders = enrollments.filter((e) => e.course_id === null).length;
-total += electivePlaceholders * 3;
       setSemesterCredits(total);
       checkCreditWarning(total);
     },
@@ -100,7 +124,12 @@ total += electivePlaceholders * 3;
     };
 
     init();
-  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId,courseCount]);
+  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId]);
+
+  // Re-run credit warning whenever targetCredits changes
+  useEffect(() => {
+    checkCreditWarning(semesterCredits);
+  }, [targetCredits, semesterCredits]);
 
   function checkCreditWarning(total) {
     if (total < MIN_CREDITS) {
@@ -139,9 +168,9 @@ total += electivePlaceholders * 3;
       return;
     }
 
-    if (userCourseIds.includes(data.id)) {
+    if (blockedCourseIds.includes(data.id)) {
       setMessage({
-        text: "You are already enrolled in this course.",
+        text: "You are already enrolled in this course or already passed it.",
         type: "warning",
       });
       setSelectedCourse(null);
@@ -199,15 +228,9 @@ total += electivePlaceholders * 3;
       }
 
       if (prereqs?.length > 0) {
-        console.log("Selected course:", selectedCourse);
-        console.log("User course IDs:", userCourseIds);
-        console.log("Prereqs:", prereqs);
-
         const missing = prereqs.filter(
-          (p) => !userCourseIds.includes(p.prereq_course_id),
+          (p) => !passedCourseIds.includes(p.prereq_course_id),
         );
-
-        console.log("Missing prereqs:", missing);
 
         if (missing.length > 0) {
           const { data: missingCourses, error: nameError } = await supabase
@@ -361,7 +384,7 @@ total += electivePlaceholders * 3;
             </span>
             <span className="course-name">{selectedCourse.name}</span>
             <span className="course-credits">
-              {selectedCourse.credits} credits
+              + {selectedCourse.credits} credits
             </span>
           </div>
           <button onClick={handleSelect} disabled={registering}>
