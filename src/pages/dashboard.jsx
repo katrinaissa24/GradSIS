@@ -24,8 +24,6 @@ export default function Dashboard() {
   const [addingSemester, setAddingSemester] = useState(false);
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [newPlanName, setNewPlanName] = useState("");
-  const [addingPlan, setAddingPlan] = useState(false);
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -157,7 +155,22 @@ async function initialize(silent = false, planIdOverride = null) {
 
       if (plansError) throw plansError;
 
-      const safePlans = fetchedPlans || [];
+      let safePlans = fetchedPlans || [];
+
+      if (safePlans.length === 0) {
+        const { data: createdPlans, error: createError } = await supabase
+          .from("plans")
+          .insert([
+            { user_id: userId, name: "Plan A" },
+            { user_id: userId, name: "Plan B" },
+          ])
+          .select();
+
+        if (createError) throw createError;
+
+        safePlans = createdPlans;
+      }
+
       setPlans(safePlans);
 
       let activePlanId = planIdOverride || selectedPlanId;
@@ -614,44 +627,6 @@ async function initialize(silent = false, planIdOverride = null) {
     }
     }
 
-    async function handleAddPlan() {
-    const trimmedName = newPlanName.trim();
-
-    if (!trimmedName) {
-    alert("Please enter a plan name.");
-    return;
-    }
-
-    if (!authUser?.id) {
-    alert("User session not ready. Please refresh and try again.");
-    return;
-    }
-
-    try {
-    setAddingPlan(true);
-
-    const { data, error } = await supabase
-      .from("plans")
-      .insert({
-        user_id: authUser.id,
-        name: trimmedName,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    setPlans((prev) => [...prev, data]);
-    setSelectedPlanId(data.id);
-    setNewPlanName("");
-
-    } catch (err) {
-    console.error("Error adding plan:", err);
-    alert(err.message || "Failed to add plan.");
-    } finally {
-    setAddingPlan(false);
-    }
-    }
 
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
 
@@ -776,38 +751,6 @@ async function initialize(silent = false, planIdOverride = null) {
       ))}
     </select>
 
-    <input
-      type="text"
-      value={newPlanName}
-      onChange={(e) => setNewPlanName(e.target.value)}
-      placeholder="New plan name"
-      style={{
-        padding: "10px 12px",
-        borderRadius: 10,
-        border: "1px solid #ddd",
-        fontSize: 14,
-        minWidth: 180,
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") handleAddPlan();
-      }}
-    />
-
-    <button
-      onClick={handleAddPlan}
-      disabled={addingPlan}
-      style={{
-        padding: "10px 14px",
-        borderRadius: 10,
-        border: "none",
-        background: "#111",
-        color: "#fff",
-        cursor: "pointer",
-        fontSize: 14,
-      }}
-    >
-      {addingPlan ? "Creating..." : "Create Plan"}
-    </button>
   </div>
 
   <br />
