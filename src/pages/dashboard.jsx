@@ -243,31 +243,22 @@ async function initialize(silent = false, planIdOverride = null) {
     }
 
   async function fetchPrerequisiteCourses() {
-    try {
-      const { data: prereqRows, error } = await supabase.from("prerequisites")
-        .select(`
-          course_id,
-          courses!prerequisites_course_id_fkey (
-            id, code, name, credits,
-            course_eligible_attributes ( attribute )
-          )
-        `);
-      if (error) throw error;
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select(`
+        id, code, name, credits,
+        course_eligible_attributes ( attribute )
+      `)
+      .order("code", { ascending: true });
 
-      const seen = new Set();
-      const data = (prereqRows || [])
-        .map((row) => row.courses)
-        .filter((course) => {
-          if (!course || seen.has(course.id)) return false;
-          seen.add(course.id);
-          return true;
-        });
+    if (error) throw error;
 
-      setPrerequisiteCourses(data);
-    } catch (err) {
-      console.error("Error fetching prerequisite courses:", err);
-    }
+    setPrerequisiteCourses(data || []);
+  } catch (err) {
+    console.error("Error fetching courses:", err);
   }
+}
 
   useEffect(() => {
     initialize();
@@ -383,10 +374,10 @@ async function initialize(silent = false, planIdOverride = null) {
 
     if (course) {
       const targetSem = semesters.find((s) => s.id === semesterId);
-      const alreadyEnrolled = targetSem?.user_courses?.some(
-        (uc) => uc.course_id === course.id,
-      );
-      if (alreadyEnrolled) return;
+const alreadyEnrolledInThisSemester = targetSem?.user_courses?.some(
+  (uc) => uc.course_id === course.id && uc.semester_id === semesterId,
+);
+if (alreadyEnrolledInThisSemester) return;
 
       const { data: prereqs, error: prereqError } = await supabase
         .from("prerequisites")
@@ -813,12 +804,10 @@ async function initialize(silent = false, planIdOverride = null) {
 
             <div style={{ flex: 1, overflowY: "auto" }}>
               <PrerequisiteSidebar
-                courses={prerequisiteCourses}
-                enrolledCourseIds={
-                  new Set(allCourses.map((uc) => uc.course_id))
-                }
-                electiveRows={electiveRows}
-                allUserCourses={allCourses}
+               courses={prerequisiteCourses}
+               enrolledCourseIds={new Set()}
+               electiveRows={electiveRows}
+               allUserCourses={allCourses}
               />
             </div>
           </div>

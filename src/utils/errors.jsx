@@ -168,14 +168,30 @@ export default function Prerequisite({
       return;
     }
 
-    if (blockedCourseIds.includes(data.id)) {
-      setMessage({
-        text: "You are already enrolled in this course or already passed it.",
-        type: "warning",
-      });
-      setSelectedCourse(null);
-      return;
-    }
+    const { data: sameSemesterEnrollment, error: sameSemesterError } =
+  await supabase
+    .from("user_courses")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("semester_id", selectedSemesterId)
+    .eq("course_id", data.id)
+    .neq("status", "dropped")
+    .maybeSingle();
+
+    if (sameSemesterError) {
+  setMessage({ text: "Error checking enrollment.", type: "error" });
+  setSelectedCourse(null);
+  return;
+}
+
+    if (sameSemesterEnrollment) {
+  setMessage({
+    text: "You already added this course in this semester.",
+    type: "warning",
+  });
+  setSelectedCourse(null);
+  return;
+}
 
     setSelectedCourse(data);
     setMessage(null);
