@@ -401,6 +401,7 @@ export default function SemesterCard({
 
       {/* ── Add course toggle ── */}
       <button
+        type="button"
         onClick={() => setShowAddCourses((prev) => !prev)}
         style={{
           marginTop: 10,

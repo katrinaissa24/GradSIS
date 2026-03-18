@@ -45,7 +45,7 @@ export default function Prerequisite({
       .from("user_courses")
       .select("course_id, grade, status")
       .eq("user_id", userId)
-      .neq("status", "dropped");
+      
 
     if (error) {
       console.error("fetchUserCourses:", error);

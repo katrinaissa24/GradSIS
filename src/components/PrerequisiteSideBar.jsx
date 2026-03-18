@@ -235,7 +235,7 @@ function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
       {/* Code + credits */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: isEnrolled ? "#059669" : "#111", letterSpacing: "0.05em" }}>
-          {course.code}
+          {course.number ? `${course.code} (${course.number})` : course.code}
         </span>
         {course.credits != null && (
           <span style={{ fontSize: 10, color: "#9ca3af" }}>{course.credits} cr</span>
@@ -244,8 +244,8 @@ function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
 
       {/* Name */}
       <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.35, marginBottom: attrs.length ? 5 : 0 }}>
-        {course.name}
-      </div>
+  {course.name}
+</div>
 
       {/* Attribute tags */}
       {attrs.length > 0 && (

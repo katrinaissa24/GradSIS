@@ -133,7 +133,7 @@ export default function Dashboard() {
   }
 
 async function initialize(silent = false, planIdOverride = null) {
-    if (!silent) setLoading(true);
+    //if (!silent) setLoading(true);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -247,7 +247,7 @@ async function initialize(silent = false, planIdOverride = null) {
     const { data, error } = await supabase
       .from("courses")
       .select(`
-        id, code, name, credits,
+        id, code, number, name, credits,
         course_eligible_attributes ( attribute )
       `)
       .order("code", { ascending: true });
@@ -823,7 +823,7 @@ if (alreadyEnrolledInThisSemester) return;
           >
             {semesters.map((sem) => (
               <SemesterCard
-                key={sem.id + "-" + sem.user_courses.length}
+                key={sem.id}
                 semester={sem}
                 userId={authUser?.id}
                 refresh={initialize}
