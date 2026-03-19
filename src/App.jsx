@@ -1,6 +1,6 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Onboarding from "./onBoarding";
+import OnBoarding from "./OnBoarding";
 import Auth from "./pages/auth";
 import Home from "./pages/home";
 import Dashboard from "./pages/dashboard";
@@ -13,7 +13,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/onboarding" element={<OnBoarding />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/resetPass" element={<ResetPassword />} />
         <Route path="/NewPass" element={<NewPassword />} />
