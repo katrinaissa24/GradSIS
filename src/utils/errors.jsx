@@ -7,12 +7,12 @@ export default function Prerequisite({
   selectedSemesterId,
   onCourseRegistered,
   targetCredits = 17,
+  currentCredits = 0,
 }) {
   const [passedCourseIds, setPassedCourseIds] = useState([]);
   const [blockedCourseIds, setBlockedCourseIds] = useState([]);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [semesterCredits, setSemesterCredits] = useState(0);
   const [creditWarning, setCreditWarning] = useState("");
   const [registering, setRegistering] = useState(false);
   const [codePrefix, setCodePrefix] = useState("");
@@ -68,68 +68,22 @@ export default function Prerequisite({
     setBlockedCourseIds([...new Set(blockedIds)]);
   }, [userId]);
 
-  const fetchSemesterCredits = useCallback(
-    async (semesterId) => {
-      if (!userId || !semesterId) return;
-
-      const { data: enrollments, error: enrollError } = await supabase
-        .from("user_courses")
-        .select("course_id")
-        .eq("user_id", userId)
-        .eq("semester_id", semesterId)
-        .neq("status", "dropped");
-
-      if (enrollError) {
-        console.error(enrollError);
-        return;
-      }
-
-      if (!enrollments || enrollments.length === 0) {
-        setSemesterCredits(0);
-        checkCreditWarning(0);
-        return;
-      }
-
-      const { data: enrolledCourses, error: coursesError } = await supabase
-        .from("courses")
-        .select("credits")
-        .in(
-          "id",
-          enrollments.map((e) => e.course_id),
-        );
-
-      if (coursesError) {
-        console.error(coursesError);
-        return;
-      }
-
-      const total = (enrolledCourses || []).reduce(
-        (sum, c) => sum + (c.credits || 0),
-        0,
-      );
-
-      setSemesterCredits(total);
-      checkCreditWarning(total);
-    },
-    [userId],
-  );
-
+  
   useEffect(() => {
     const init = async () => {
       await fetchUserCourses();
-      if (selectedSemesterId) {
-        await fetchSemesterCredits(selectedSemesterId);
-      }
+      checkCreditWarning(currentCredits);
       setLoading(false);
     };
 
     init();
-  }, [fetchUserCourses, fetchSemesterCredits, selectedSemesterId]);
+  }, [fetchUserCourses, selectedSemesterId]);
 
   // Re-run credit warning whenever targetCredits changes
   useEffect(() => {
-    checkCreditWarning(semesterCredits);
-  }, [targetCredits, semesterCredits]);
+    checkCreditWarning(currentCredits
+    );
+  }, [targetCredits, currentCredits]);
 
   function checkCreditWarning(total) {
     if (total < MIN_CREDITS) {
@@ -217,7 +171,7 @@ export default function Prerequisite({
     if (!selectedCourse) return;
 
     const courseCredits = selectedCourse.credits || 0;
-    const newTotal = semesterCredits + courseCredits;
+    const newTotal = currentCredits + courseCredits;
 
     if (newTotal > MAX_CREDITS) {
       setMessage({
@@ -317,7 +271,6 @@ export default function Prerequisite({
       }
 
       await fetchUserCourses();
-      await fetchSemesterCredits(selectedSemesterId);
 
       setMessage({
         text: `${selectedCourse.code} ${selectedCourse.number} added successfully!`,
@@ -350,9 +303,9 @@ export default function Prerequisite({
   if (loading) return <div className="prereq-loading">Loading…</div>;
 
   const creditStatus =
-    semesterCredits < MIN_CREDITS
+    currentCredits < MIN_CREDITS
       ? "below"
-      : semesterCredits > MAX_CREDITS
+      : currentCredits > MAX_CREDITS
         ? "exceed"
         : "good";
 
@@ -363,7 +316,7 @@ export default function Prerequisite({
         <div
           className={`prereq-credit-badge prereq-credit-badge--${creditStatus}`}
         >
-          {semesterCredits} / {MAX_CREDITS} credits
+          {currentCredits} / {MAX_CREDITS} credits
         </div>
       </div>
 

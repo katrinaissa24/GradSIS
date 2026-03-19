@@ -29,6 +29,7 @@ export default function SemesterCard({
 
   const LOAD_LIMITS = { underload: 11, normal: 17, overload: 21 };
   const targetCredits = LOAD_LIMITS[loadMode] ?? 17;
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const { isDraggingAny } = useDragLayer((monitor) => ({
     isDraggingAny: monitor.isDragging(),
@@ -46,6 +47,7 @@ export default function SemesterCard({
             item.electiveAttribute,
             Number(targetCredits) || 15,
           );
+          setRefreshKey(k => k + 1); 
         return;
       }
       if (item.course.semester_id === semester.id) return;
@@ -56,6 +58,7 @@ export default function SemesterCard({
         .from("user_courses")
         .update({ semester_id: semester.id })
         .eq("id", item.course.id);
+        setRefreshKey(k => k + 1); 
     },
     collect: (monitor) => ({
       isOver: monitor.isOver(),
@@ -418,14 +421,15 @@ export default function SemesterCard({
       </button>
 
       {showAddCourses && (
-        <div key={semester.user_courses.length} style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16 }}>
           <Prerequisite
-            key={semester.user_courses.length}
+            key={refreshKey}
             userId={userId}
             selectedSemesterId={semester.id}
             onCourseRegistered={refresh}
             courseCount={semester.user_courses.length}
             targetCredits={Number(targetCredits)}
+            currentCredits={credits}
           />
         </div>
       )}
