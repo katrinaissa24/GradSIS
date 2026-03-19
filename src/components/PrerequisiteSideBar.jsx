@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useDrag } from "react-dnd";
+import { getEmptyImage } from "react-dnd-html5-backend";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
   { bucket: "Community Engaged Learning", required: 1 },
@@ -181,7 +182,7 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
 }
 
 function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
     item: () => ({
       type: "SIDEBAR_COURSE",
@@ -195,6 +196,10 @@ function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
       isDragging: !!monitor.isDragging(),
     }),
   });
+
+useEffect(() => {
+  preview(getEmptyImage(), { captureDraggingState: true });
+}, [preview]);
 
   const attrs = (course.course_eligible_attributes || []).map((x) => x.attribute).filter(Boolean);
 
@@ -265,7 +270,7 @@ function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
   );
 }
 function ElectiveSlotCard({ bucket }) {
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag,preview] = useDrag({
     type: "SIDEBAR_COURSE",
     item: () => ({
       type: "SIDEBAR_COURSE",
@@ -278,7 +283,9 @@ function ElectiveSlotCard({ bucket }) {
       isDragging: !!monitor.isDragging(),
     }),
   });
-
+useEffect(() => {
+  preview(getEmptyImage(), { captureDraggingState: true });
+}, [preview]);
   return (
     <div
       ref={drag}
