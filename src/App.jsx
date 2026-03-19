@@ -1,7 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import OnBoarding from "./OnBoarding";
 import Auth from "./pages/auth";
+import OnBoarding from "./pages/onboarding";
 import Home from "./pages/home";
 import Dashboard from "./pages/dashboard";
 import Errors from './utils/errors';
