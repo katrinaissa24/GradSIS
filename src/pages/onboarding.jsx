@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../services/supabase";
 import { useNavigate } from "react-router-dom";
+import {
+  hasCompletedOnboarding,
+  isProfileComplete,
+} from "../utils/OnBoarding.utils";
 
 // Custom Dropdown Component
 function CustomDropdown({ value, onChange, options, placeholder }) {
@@ -112,7 +116,7 @@ export default function OnBoarding() {
         }
 
         // If both fields are filled, redirect to dashboard
-        if (userData && userData.major_id && userData.starting_term_id) {
+        if (hasCompletedOnboarding(userData)) {
           navigate("/dashboard");
           return;
         }
@@ -157,8 +161,7 @@ export default function OnBoarding() {
     loadStartingTerms();
   }, []);
 
-  const isComplete =
-    profile.academicStanding && profile.major && profile.startingTerm;
+  const isComplete = isProfileComplete(profile);
 
 
 async function saveProfile() {
@@ -191,12 +194,14 @@ async function saveProfile() {
 
     
     // 3️⃣ Save user major + starting term
-    const { error: userError } = await supabase.from("users").upsert({
-  id: user.id,
-  email: user.email,
-  major_id: profile.major,
-  starting_term_id: profile.startingTerm,
-});
+    const { error: userError } = await supabase
+      .from("users")
+      .update({
+        major_id: profile.major,
+        starting_term_id: profile.startingTerm,
+        student_type: profile.academicStanding,
+      })
+      .eq("id", user.id);
 
     if (userError) throw userError;
 

@@ -6,6 +6,7 @@ import user_icon from "../assets/person.png";
 import { signUp, signIn } from "../services/auth";
 import { supabase } from "../services/supabase";
 import { useNavigate } from "react-router-dom";
+import { hasCompletedOnboarding } from "../utils/OnBoarding.utils";
 
 const AuthPage = () => {
   const [action, setAction] = useState("Sign Up");
@@ -23,21 +24,19 @@ const [selectedTermId, setSelectedTermId] = useState(null);
   useEffect(() => {
     const checkUser = async () => {
       const {
-        data: { user },
+        data: { session },
       } = await supabase.auth.getSession();
+      const user = session?.user;
       if (user) {
-        // Check if user has completed onboarding by checking major_id and starting_term_id
         const { data: userData } = await supabase
           .from("users")
           .select("major_id, starting_term_id")
           .eq("id", user.id)
           .single();
 
-        if (userData && userData.major_id && userData.starting_term_id) {
-          // User has completed onboarding
+        if (hasCompletedOnboarding(userData)) {
           navigate("/dashboard");
         } else {
-          // User hasn't completed onboarding
           navigate("/onboarding");
         }
       }
@@ -121,12 +120,10 @@ const [selectedTermId, setSelectedTermId] = useState(null);
             .eq("id", user.id)
             .single();
 
-          if (userData && userData.major_id && userData.starting_term_id) {
-            // User has completed onboarding -> go to dashboard
+          if (hasCompletedOnboarding(userData)) {
             setMessage({ text: "Logged in successfully!", isError: false });
             navigate("/dashboard");
           } else {
-            // User hasn't completed onboarding -> go to onboarding
             navigate("/onboarding");
           }
         }
