@@ -24,11 +24,16 @@ export default function SemesterCard({
   );
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
-  const [loadMode, setLoadMode] = useState(semester.load_mode || "normal");
-  const [savingLoadPrefs, setSavingLoadPrefs] = useState(false);
 
   const LOAD_LIMITS = { underload: 11, normal: 17, overload: 21 };
+  const loadMode = semester.load_mode || "normal";
   const targetCredits = LOAD_LIMITS[loadMode] ?? 17;
+  const loadLabel =
+    credits <= LOAD_LIMITS.underload
+      ? "Underloaded"
+      : credits >= 18
+        ? "Overloaded"
+        : "Normal";
   const [refreshKey, setRefreshKey] = useState(0);
 
   const { isDraggingAny } = useDragLayer((monitor) => ({
@@ -47,7 +52,7 @@ export default function SemesterCard({
             item.electiveAttribute,
             Number(targetCredits) || 15,
           );
-          setRefreshKey(k => k + 1); 
+        setRefreshKey((k) => k + 1);
         return;
       }
       if (item.course.semester_id === semester.id) return;
@@ -58,7 +63,7 @@ export default function SemesterCard({
         .from("user_courses")
         .update({ semester_id: semester.id })
         .eq("id", item.course.id);
-        setRefreshKey(k => k + 1); 
+      setRefreshKey((k) => k + 1);
     },
     collect: (monitor) => ({
       isOver: monitor.isOver(),
@@ -70,28 +75,6 @@ export default function SemesterCard({
     present: "#10b981",
     future: "#2563eb",
   };
-
-  async function saveSemesterLoadPreferences() {
-    try {
-      setSavingLoadPrefs(true);
-
-      const { error } = await supabase
-        .from("user_semesters")
-        .update({
-          load_mode: loadMode,
-          target_credits: targetCredits,
-        })
-        .eq("id", semester.id);
-
-      if (error) throw error;
-
-      await refresh(true);
-    } catch (err) {
-      console.error("Error saving semester load preferences:", err);
-    } finally {
-      setSavingLoadPrefs(false);
-    }
-  }
 
   async function handleRenameSemester() {
     const trimmedName = editedSemesterName.trim();
@@ -127,10 +110,7 @@ export default function SemesterCard({
     try {
       setDeletingSemester(true);
 
-      await supabase
-        .from("user_courses")
-        .delete()
-        .eq("semester_id", semester.id);
+      await supabase.from("user_courses").delete().eq("semester_id", semester.id);
 
       const { error } = await supabase
         .from("user_semesters")
@@ -165,7 +145,6 @@ export default function SemesterCard({
         backgroundColor: isOver ? "#f1f5f9" : "#fefefe",
       }}
     >
-      {/* ── Header: name + rename/delete ── */}
       <div
         style={{
           display: "flex",
@@ -283,88 +262,58 @@ export default function SemesterCard({
         )}
       </div>
 
-      {/* ── Status buttons ── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {["previous", "present", "future"].map((status) => {
-          const isActive = semester.status === status;
-          const color = colors[status];
-          return (
-            <button
-              key={status}
-              onClick={() => updateStatus(semester.id, status)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 6,
-                border: isActive ? `2px solid ${color}` : "1px solid #d1d5db",
-                background: isActive ? `${color}20` : "#fff",
-                color: isActive ? color : "#6b7280",
-                fontSize: 13,
-                fontWeight: isActive ? 600 : 400,
-                cursor: "pointer",
-                textTransform: "capitalize",
-                transition: "all 0.2s",
-              }}
-            >
-              {status}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Load preference ── */}
       <div
         style={{
           display: "flex",
-          gap: 10,
           alignItems: "center",
+          justifyContent: "space-between",
           flexWrap: "wrap",
-          marginBottom: 10,
-          padding: "10px 12px",
-          border: "1px solid #eee",
-          borderRadius: 10,
-          background: "#fafafa",
+          gap: 12,
+          marginBottom: 12,
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Load</span>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {["previous", "present", "future"].map((status) => {
+            const isActive = semester.status === status;
+            const color = colors[status];
+            return (
+              <button
+                key={status}
+                onClick={() => updateStatus(semester.id, status)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: isActive ? `2px solid ${color}` : "1px solid #d1d5db",
+                  background: isActive ? `${color}20` : "#fff",
+                  color: isActive ? color : "#6b7280",
+                  fontSize: 13,
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                  transition: "all 0.2s",
+                }}
+              >
+                {status}
+              </button>
+            );
+          })}
+        </div>
 
-        <select
-          value={loadMode}
-          onChange={(e) => {
-            setLoadMode(e.target.value);
-          }}
+        <div
           style={{
-            padding: "7px 10px",
+            padding: "8px 12px",
             borderRadius: 8,
-            border: "1px solid #ddd",
+            border: "1px solid #eee",
+            background: "#fafafa",
             fontSize: 13,
-            background: "#fff",
-            cursor: "pointer",
+            fontWeight: 600,
+            color: "#374151",
           }}
         >
-          <option value="underload">Underload (≤ 11 cr)</option>
-          <option value="normal">Normal (12 – 17 cr)</option>
-          <option value="overload">Overload (≥ 18 cr)</option>
-        </select>
-
-        <button
-          onClick={saveSemesterLoadPreferences}
-          disabled={savingLoadPrefs}
-          style={{
-            padding: "7px 12px",
-            borderRadius: 8,
-            border: "none",
-            background: "#111",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 13,
-            opacity: savingLoadPrefs ? 0.7 : 1,
-          }}
-        >
-          {savingLoadPrefs ? "Saving..." : "Save"}
-        </button>
+          Load: <span style={{ color: "#111827" }}>{loadLabel}</span>
+        </div>
       </div>
 
-      {/* ── Course list ── */}
       <div
         style={{
           display: "flex",
@@ -384,7 +333,6 @@ export default function SemesterCard({
         ))}
       </div>
 
-      {/* ── Footer stats ── */}
       <div
         style={{
           marginTop: 12,
@@ -402,7 +350,6 @@ export default function SemesterCard({
         </div>
       </div>
 
-      {/* ── Add course toggle ── */}
       <button
         type="button"
         onClick={() => setShowAddCourses((prev) => !prev)}
