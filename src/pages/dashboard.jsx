@@ -157,18 +157,23 @@ async function initialize(silent = false, planIdOverride = null) {
 
       let safePlans = fetchedPlans || [];
 
-      if (safePlans.length === 0) {
+      const hasPlanA = safePlans.some((p) => p.name === "Plan A");
+      const hasPlanB = safePlans.some((p) => p.name === "Plan B");
+
+      const plansToCreate = [];
+
+      if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
+      if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
+
+      if (plansToCreate.length > 0) {
         const { data: createdPlans, error: createError } = await supabase
           .from("plans")
-          .insert([
-            { user_id: userId, name: "Plan A" },
-            { user_id: userId, name: "Plan B" },
-          ])
+          .insert(plansToCreate)
           .select();
 
         if (createError) throw createError;
 
-        safePlans = createdPlans;
+        safePlans = [...safePlans, ...createdPlans];
       }
 
       setPlans(safePlans);
