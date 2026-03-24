@@ -252,7 +252,7 @@ async function initialize(silent = false, planIdOverride = null) {
     const { data, error } = await supabase
       .from("courses")
       .select(`
-        id, code, number, name, credits,
+        id, code, number, name, credits,req_sem,
         course_eligible_attributes ( attribute )
       `)
       .order("code", { ascending: true });
@@ -425,18 +425,12 @@ if (alreadyEnrolledInThisSemester) return;
         }
       }
 
-      const { data: semData } = await supabase
-        .from("user_semesters")
-        .select("semester_number")
-        .eq("id", semesterId)
-        .single();
-
-      if (course.req_sem && semData?.semester_number < course.req_sem) {
-        alert(
-          `This course is intended for semester ${course.req_sem} or later.`,
-        );
-        return;
-      }
+      const targetSemNumber = targetSem?.semester_number;
+console.log("req_sem:", course.req_sem, "targetSemNumber:", targetSemNumber);
+if (course.req_sem && targetSemNumber !== course.req_sem) {
+  alert(`This course must be taken in semester ${course.req_sem}.`);
+  return;
+}
 
       const targetSemCourses =
         semesters.find((s) => s.id === semesterId)?.user_courses || [];

@@ -31,8 +31,11 @@ const completedCourseIds = useMemo(() => {
   const filtered = useMemo(() => {
     return courses.filter((c) => {
       const matchesSearch =
-        c.code?.toLowerCase().includes(search.toLowerCase()) ||
-        c.name?.toLowerCase().includes(search.toLowerCase());
+  c.code?.toLowerCase().includes(search.toLowerCase()) ||
+  c.name?.toLowerCase().includes(search.toLowerCase()) ||
+  c.number?.toString().toLowerCase().includes(search.toLowerCase()) ||
+  `${c.code} ${c.number}`.toLowerCase().includes(search.toLowerCase()) ||
+  `${c.code}${c.number}`.toLowerCase().includes(search.toLowerCase());
       const isEnrolled = enrolledCourseIds.has(c.id);
       const isCompleted = completedCourseIds.has(c.id);
       const matchesFilter =
