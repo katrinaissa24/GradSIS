@@ -20,6 +20,13 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
+const completedCourseIds = useMemo(() => {
+    const ids = new Set();
+    for (const uc of allUserCourses) {
+      if (uc.grade && PASSING_GRADES.has(uc.grade)) ids.add(uc.course_id);
+    }
+    return ids;
+  }, [allUserCourses]);
 
   const filtered = useMemo(() => {
     return courses.filter((c) => {
@@ -27,21 +34,15 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
         c.code?.toLowerCase().includes(search.toLowerCase()) ||
         c.name?.toLowerCase().includes(search.toLowerCase());
       const isEnrolled = enrolledCourseIds.has(c.id);
+      const isCompleted = completedCourseIds.has(c.id);
       const matchesFilter =
         filter === "all" ||
         (filter === "enrolled" && isEnrolled) ||
-        (filter === "available" && !isEnrolled);
+        (filter === "available" && !isEnrolled&& !isCompleted);
       return matchesSearch && matchesFilter;
     });
-  }, [courses, search, filter, enrolledCourseIds]);
-
-  const completedCourseIds = useMemo(() => {
-    const ids = new Set();
-    for (const uc of allUserCourses) {
-      if (uc.grade && PASSING_GRADES.has(uc.grade)) ids.add(uc.course_id);
-    }
-    return ids;
-  }, [allUserCourses]);
+  }, [courses, search, filter, enrolledCourseIds, completedCourseIds]);
+  
 
   const electiveSections = useMemo(() => {
     return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
@@ -59,8 +60,7 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
   }, [courses, completedCourseIds, electiveRows]);
 
   const enrolledCount = courses.filter((c) => enrolledCourseIds.has(c.id)).length;
-  const availableCount = courses.length - enrolledCount;
-
+const availableCount = courses.filter((c) => !enrolledCourseIds.has(c.id) && !completedCourseIds.has(c.id)).length;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Tab switcher */}

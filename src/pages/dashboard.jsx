@@ -810,7 +810,7 @@ if (alreadyEnrolledInThisSemester) return;
             <div style={{ flex: 1, overflowY: "auto" }}>
               <PrerequisiteSidebar
                courses={prerequisiteCourses}
-               enrolledCourseIds={new Set()}
+               enrolledCourseIds={new Set(allCourses.map((uc) => uc.course_id).filter(Boolean))}
                electiveRows={electiveRows}
                allUserCourses={allCourses}
               />
