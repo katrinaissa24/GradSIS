@@ -7,7 +7,7 @@ import Dashboard from "./pages/dashboard";
 import Errors from './utils/errors';
 import ResetPassword from "./pages/resetPass";
 import NewPassword from "./pages/NewPass";
-
+import CourseRating from "./pages/CourseRating";
 export default function App() {
   return (
     <Router>
@@ -19,6 +19,7 @@ export default function App() {
         <Route path="/NewPass" element={<NewPassword />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/errors" element ={<Errors/>}/>
+        <Route path="/course/:courseId" element={<CourseRating />} />
       </Routes>
     </Router>
   );

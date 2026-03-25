@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useDrag } from "react-dnd";
+import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
@@ -20,6 +21,7 @@ export default function PrerequisiteSidebar({ courses = [], enrolledCourseIds = 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
+  
 const completedCourseIds = useMemo(() => {
     const ids = new Set();
     for (const uc of allUserCourses) {
@@ -185,6 +187,7 @@ const availableCount = courses.filter((c) => !enrolledCourseIds.has(c.id) && !co
 }
 
 function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
+  const navigate = useNavigate();
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
     item: () => ({
@@ -269,6 +272,26 @@ useEffect(() => {
           ))}
         </div>
       )}
+       <button
+        onClick={(e) => {
+          e.stopPropagation();
+          navigate(`/course/${course.id}`);
+        }}
+        style={{
+          marginTop: 6,
+          fontSize: 10,
+          padding: "3px 8px",
+          borderRadius: 5,
+          border: "1px solid #ddd",
+          background: "#fff",
+          cursor: "pointer",
+          color: "#374151",
+          width: "100%",
+        }}
+      >
+        View Details & Reviews
+      </button>
+
     </div>
   );
 }
