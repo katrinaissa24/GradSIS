@@ -173,17 +173,23 @@ export default function Dashboard() {
 
       let safePlans = fetchedPlans || [];
 
-      if (safePlans.length === 0) {
+      const hasPlanA = safePlans.some((p) => p.name === "Plan A");
+      const hasPlanB = safePlans.some((p) => p.name === "Plan B");
+
+      const plansToCreate = [];
+
+      if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
+      if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
+
+      if (plansToCreate.length > 0) {
         const { data: createdPlans, error: createError } = await supabase
           .from("plans")
-          .insert([
-            { user_id: userId, name: "Plan A" },
-            { user_id: userId, name: "Plan B" },
-          ])
+          .insert(plansToCreate)
           .select();
 
         if (createError) throw createError;
-        safePlans = createdPlans;
+
+        safePlans = [...safePlans, ...createdPlans];
       }
 
       setPlans(safePlans);
@@ -217,13 +223,15 @@ export default function Dashboard() {
       if (semesterIds.length > 0) {
         const { data: fetchedCourses, error: coursesError } = await supabase
           .from("user_courses")
-          .select(`
+          .select(
+            `
             *,
             courses (
               id, name, code, number, credits,
               course_eligible_attributes ( attribute )
             )
-          `)
+          `,
+          )
           .in("semester_id", semesterIds);
 
         if (coursesError) throw coursesError;
@@ -258,10 +266,12 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from("courses")
-        .select(`
-          id, code, number, name, credits,
-          course_eligible_attributes ( attribute )
-        `)
+        .select(
+          `
+        id, code, number, name, credits,req_sem,
+        course_eligible_attributes ( attribute )
+      `,
+        )
         .order("code", { ascending: true });
 
       if (error) throw error;
@@ -373,7 +383,8 @@ export default function Dashboard() {
     const updates = { [field]: value };
 
     if (field === "grade") {
-      updates.status = value === "W" || value === "WF" ? "dropped" : "completed";
+      updates.status =
+        value === "W" || value === "WF" ? "dropped" : "completed";
     }
 
     const { error } = await supabase
@@ -490,14 +501,15 @@ export default function Dashboard() {
         }
       }
 
-      const { data: semData } = await supabase
-        .from("user_semesters")
-        .select("semester_number")
-        .eq("id", semesterId)
-        .single();
-
-      if (course.req_sem && semData?.semester_number < course.req_sem) {
-        alert(`This course is intended for semester ${course.req_sem} or later.`);
+      const targetSemNumber = targetSem?.semester_number;
+      console.log(
+        "req_sem:",
+        course.req_sem,
+        "targetSemNumber:",
+        targetSemNumber,
+      );
+      if (course.req_sem && targetSemNumber !== course.req_sem) {
+        alert(`This course must be taken in semester ${course.req_sem}.`);
         return;
       }
 
@@ -588,13 +600,15 @@ export default function Dashboard() {
         grade: null,
         attribute: attributeToUse,
       })
-      .select(`
+      .select(
+        `
         *,
         courses (
           id, name, code, number, credits,
           course_eligible_attributes ( attribute )
         )
-      `)
+      `,
+      )
       .single();
 
     if (error) {
@@ -1037,20 +1051,10 @@ export default function Dashboard() {
               <PrerequisiteSidebar
                 courses={prerequisiteCourses}
                 enrolledCourseIds={
-                  new Set(allCourses.map((course) => course.course_id).filter(Boolean))
+                  new Set(allCourses.map((uc) => uc.course_id).filter(Boolean))
                 }
                 electiveRows={electiveRows}
                 allUserCourses={allCourses}
-                isMobile={isMobile}
-                mobileSemesterId={mobileQuickAddSemesterId}
-                onMobileSemesterChange={setMobileQuickAddSemesterId}
-                semesters={semesters}
-                onQuickAddCourse={(course) =>
-                  handleSidebarDrop(course, mobileQuickAddSemesterId, null)
-                }
-                onQuickAddElective={(bucket) =>
-                  handleSidebarDrop(null, mobileQuickAddSemesterId, bucket)
-                }
               />
             </div>
           </div>
@@ -1133,7 +1137,14 @@ export default function Dashboard() {
           </div>
 
           {!isMobile && (
-            <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
+            <div
+              style={{
+                width: 320,
+                flexShrink: 0,
+                position: "sticky",
+                top: 110,
+              }}
+            >
               <div
                 style={{
                   background: "white",
@@ -1150,13 +1161,17 @@ export default function Dashboard() {
                     marginBottom: 10,
                   }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>
+                    Electives
+                  </span>
                   <span style={{ fontSize: 12, color: "#666" }}>
                     {electivesRemainingTotal} left
                   </span>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
                   {electiveRows.map((row) => (
                     <div
                       key={row.bucket}
@@ -1202,7 +1217,6 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-
       </div>
     </DndProvider>
   );

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useDrag } from "react-dnd";
+import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
@@ -43,20 +44,6 @@ export default function PrerequisiteSidebar({
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
 
-  const filtered = useMemo(() => {
-    return courses.filter((c) => {
-      const matchesSearch =
-        c.code?.toLowerCase().includes(search.toLowerCase()) ||
-        c.name?.toLowerCase().includes(search.toLowerCase());
-      const isEnrolled = enrolledCourseIds.has(c.id);
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "enrolled" && isEnrolled) ||
-        (filter === "available" && !isEnrolled);
-      return matchesSearch && matchesFilter;
-    });
-  }, [courses, search, filter, enrolledCourseIds]);
-
   const completedCourseIds = useMemo(() => {
     const ids = new Set();
     for (const uc of allUserCourses) {
@@ -65,10 +52,30 @@ export default function PrerequisiteSidebar({
     return ids;
   }, [allUserCourses]);
 
+  const filtered = useMemo(() => {
+    return courses.filter((c) => {
+      const matchesSearch =
+        c.code?.toLowerCase().includes(search.toLowerCase()) ||
+        c.name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.number?.toString().toLowerCase().includes(search.toLowerCase()) ||
+        `${c.code} ${c.number}`.toLowerCase().includes(search.toLowerCase()) ||
+        `${c.code}${c.number}`.toLowerCase().includes(search.toLowerCase());
+      const isEnrolled = enrolledCourseIds.has(c.id);
+      const isCompleted = completedCourseIds.has(c.id);
+      const matchesFilter =
+        filter === "all" ||
+        (filter === "enrolled" && isEnrolled) ||
+        (filter === "available" && !isEnrolled && !isCompleted);
+      return matchesSearch && matchesFilter;
+    });
+  }, [courses, search, filter, enrolledCourseIds, completedCourseIds]);
+
   const electiveSections = useMemo(() => {
     return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
       const eligible = courses.filter((c) => {
-        const attrs = (c.course_eligible_attributes || []).map((x) => x.attribute);
+        const attrs = (c.course_eligible_attributes || []).map(
+          (x) => x.attribute,
+        );
         return attrs.includes(bucket) && !completedCourseIds.has(c.id);
       });
       const creditsPerCourse = 3;
@@ -79,12 +86,21 @@ export default function PrerequisiteSidebar({
     });
   }, [courses, completedCourseIds, electiveRows]);
 
-  const enrolledCount = courses.filter((c) => enrolledCourseIds.has(c.id)).length;
-  const availableCount = courses.length - enrolledCount;
-
+  const enrolledCount = courses.filter((c) =>
+    enrolledCourseIds.has(c.id),
+  ).length;
+  const availableCount = courses.filter(
+    (c) => !enrolledCourseIds.has(c.id) && !completedCourseIds.has(c.id),
+  ).length;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", borderBottom: "1px solid #f1f5f9", padding: "0 14px" }}>
+      <div
+        style={{
+          display: "flex",
+          borderBottom: "1px solid #f1f5f9",
+          padding: "0 14px",
+        }}
+      >
         {[
           { key: "catalog", label: "Catalog" },
           { key: "electives", label: "Electives" },
@@ -99,7 +115,8 @@ export default function PrerequisiteSidebar({
               fontWeight: activeTab === key ? 700 : 400,
               border: "none",
               background: "none",
-              borderBottom: activeTab === key ? "2px solid #111" : "2px solid transparent",
+              borderBottom:
+                activeTab === key ? "2px solid #111" : "2px solid transparent",
               color: activeTab === key ? "#111" : "#9ca3af",
               cursor: "pointer",
               textTransform: "uppercase",
@@ -113,7 +130,14 @@ export default function PrerequisiteSidebar({
 
       {isMobile && (
         <div style={{ padding: "12px 14px 0" }}>
-          <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              color: "#6b7280",
+              marginBottom: 6,
+            }}
+          >
             Add items to
           </label>
           <select
@@ -139,7 +163,14 @@ export default function PrerequisiteSidebar({
       )}
 
       {activeTab === "catalog" && (
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            flex: 1,
+          }}
+        >
           <div style={{ padding: "10px 14px 0" }}>
             <div
               style={{
@@ -152,7 +183,14 @@ export default function PrerequisiteSidebar({
                 padding: "9px 10px",
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#9ca3af"
+                strokeWidth="2.5"
+              >
                 <circle cx="11" cy="11" r="8" />
                 <path d="M21 21l-4.35-4.35" />
               </svg>
@@ -188,7 +226,14 @@ export default function PrerequisiteSidebar({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 4, padding: "10px 14px 6px", flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: "10px 14px 6px",
+              flexWrap: "wrap",
+            }}
+          >
             {[
               { key: "all", label: `All (${courses.length})` },
               { key: "available", label: `Open (${availableCount})` },
@@ -203,7 +248,8 @@ export default function PrerequisiteSidebar({
                   fontSize: 10,
                   fontWeight: filter === key ? 700 : 400,
                   borderRadius: 6,
-                  border: filter === key ? "1.5px solid #111" : "1px solid #e5e7eb",
+                  border:
+                    filter === key ? "1.5px solid #111" : "1px solid #e5e7eb",
                   background: filter === key ? "#111" : "#fff",
                   color: filter === key ? "#fff" : "#6b7280",
                   cursor: "pointer",
@@ -217,7 +263,9 @@ export default function PrerequisiteSidebar({
             ))}
           </div>
 
-          <div style={{ height: 1, background: "#f1f5f9", margin: "0 14px 8px" }} />
+          <div
+            style={{ height: 1, background: "#f1f5f9", margin: "0 14px 8px" }}
+          />
 
           <div
             style={{
@@ -230,7 +278,9 @@ export default function PrerequisiteSidebar({
               color: "#059669",
             }}
           >
-            {isMobile ? "Tap Add to place a course in the selected semester." : "Drag any card onto a semester."}
+            {isMobile
+              ? "Tap Add to place a course in the selected semester."
+              : "Drag any card onto a semester."}
           </div>
 
           <div
@@ -244,7 +294,14 @@ export default function PrerequisiteSidebar({
             }}
           >
             {filtered.length === 0 ? (
-              <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 12, marginTop: 32 }}>
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#9ca3af",
+                  fontSize: 12,
+                  marginTop: 32,
+                }}
+              >
                 No courses found
               </div>
             ) : (
@@ -264,7 +321,16 @@ export default function PrerequisiteSidebar({
       )}
 
       {activeTab === "electives" && (
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "10px 14px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {electiveSections
             .filter(({ remaining }) => remaining > 0)
             .flatMap(({ bucket, remaining }) =>
@@ -284,14 +350,8 @@ export default function PrerequisiteSidebar({
   );
 }
 
-function DraggableCourseCard({
-  course,
-  isEnrolled,
-  electiveAttribute,
-  isMobile = false,
-  onQuickAdd,
-  disabled = false,
-}) {
+function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
+  const navigate = useNavigate();
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
     item: () => ({
@@ -311,12 +371,20 @@ function DraggableCourseCard({
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  const attrs = (course.course_eligible_attributes || []).map((x) => x.attribute).filter(Boolean);
+  const attrs = (course.course_eligible_attributes || [])
+    .map((x) => x.attribute)
+    .filter(Boolean);
 
   return (
     <div
       ref={!isEnrolled && !isMobile ? drag : undefined}
-      title={isEnrolled ? "Already added to a semester" : isMobile ? "Tap Add to place this course" : "Drag to a semester"}
+      title={
+        isEnrolled
+          ? "Already added to a semester"
+          : isMobile
+            ? "Tap Add to place this course"
+            : "Drag to a semester"
+      }
       style={{
         position: "relative",
         padding: "10px 11px",
@@ -348,21 +416,47 @@ function DraggableCourseCard({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: isEnrolled ? "#059669" : "#111", letterSpacing: "0.05em" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 2,
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: isEnrolled ? "#059669" : "#111",
+            letterSpacing: "0.05em",
+          }}
+        >
           {course.number ? `${course.code} (${course.number})` : course.code}
         </span>
         {course.credits != null && (
-          <span style={{ fontSize: 10, color: "#9ca3af" }}>{course.credits} cr</span>
+          <span style={{ fontSize: 10, color: "#9ca3af" }}>
+            {course.credits} cr
+          </span>
         )}
       </div>
 
-      <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.35, marginBottom: attrs.length ? 5 : 0 }}>
+      <div
+        style={{
+          fontSize: 12,
+          color: "#374151",
+          lineHeight: 1.35,
+          marginBottom: attrs.length ? 5 : 0,
+        }}
+      >
         {course.name}
       </div>
 
       {attrs.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}>
+        <div
+          style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}
+        >
           {attrs.map((a) => (
             <span
               key={a}
@@ -381,32 +475,35 @@ function DraggableCourseCard({
           ))}
         </div>
       )}
-
-      {isMobile && !isEnrolled && (
-        <button
-          type="button"
-          onClick={() => onQuickAdd?.(course)}
-          disabled={disabled}
-          style={{
-            width: "100%",
-            minHeight: 40,
-            marginTop: 10,
-            borderRadius: 8,
-            border: "1px solid #111",
-            background: disabled ? "#f3f4f6" : "#111",
-            color: disabled ? "#9ca3af" : "#fff",
-            cursor: disabled ? "not-allowed" : "pointer",
-            fontSize: 13,
-          }}
-        >
-          Add
-        </button>
-      )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          navigate(`/course/${course.id}`);
+        }}
+        style={{
+          marginTop: 6,
+          fontSize: 10,
+          padding: "3px 8px",
+          borderRadius: 5,
+          border: "1px solid #ddd",
+          background: "#fff",
+          cursor: "pointer",
+          color: "#374151",
+          width: "100%",
+        }}
+      >
+        View Details & Reviews
+      </button>
     </div>
   );
 }
 
-function ElectiveSlotCard({ bucket, isMobile = false, onQuickAdd, disabled = false }) {
+function ElectiveSlotCard({
+  bucket,
+  isMobile = false,
+  onQuickAdd,
+  disabled = false,
+}) {
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
     item: () => ({
