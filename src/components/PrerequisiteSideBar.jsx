@@ -350,7 +350,14 @@ export default function PrerequisiteSidebar({
   );
 }
 
-function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
+function DraggableCourseCard({
+  course,
+  isEnrolled,
+  electiveAttribute,
+  isMobile = false,
+  onQuickAdd,
+  disabled = false,
+}) {
   const navigate = useNavigate();
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
@@ -494,6 +501,29 @@ function DraggableCourseCard({ course, isEnrolled, electiveAttribute }) {
       >
         View Details & Reviews
       </button>
+      {isMobile && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) onQuickAdd?.(course.id);
+          }}
+          disabled={disabled || isEnrolled}
+          style={{
+            marginTop: 6,
+            fontSize: 11,
+            padding: "8px 10px",
+            borderRadius: 6,
+            border: "1px solid #111",
+            background: disabled || isEnrolled ? "#f3f4f6" : "#111",
+            color: disabled || isEnrolled ? "#9ca3af" : "#fff",
+            cursor: disabled || isEnrolled ? "not-allowed" : "pointer",
+            width: "100%",
+            fontWeight: 600,
+          }}
+        >
+          {isEnrolled ? "Added" : "Add"}
+        </button>
+      )}
     </div>
   );
 }
