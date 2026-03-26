@@ -2,17 +2,22 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
 import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
-import { DndProvider } from "react-dnd";
+import { DndProvider, useDragLayer } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
 import {
-  calculateSemesterGPA,
   calculateCredits,
   calculateCumulativeGPAWithRepeats,
 } from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
-import { useDragLayer } from "react-dnd";
+
+const MOBILE_BREAKPOINT = 768;
+const LOAD_CONFIG = {
+  underload: { targetCredits: 11 },
+  normal: { targetCredits: 17 },
+  overload: { targetCredits: 21 },
+};
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -24,6 +29,14 @@ export default function Dashboard() {
   const [addingSemester, setAddingSemester] = useState(false);
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
+  const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
+  const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined"
+      ? window.innerWidth <= MOBILE_BREAKPOINT
+      : false,
+  );
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -69,23 +82,28 @@ export default function Dashboard() {
     CEL: "Community Engaged Learning",
   };
 
-  function calcCredits(semesters) {
-    let total = 0,
-      completed = 0;
-    for (const sem of semesters) {
+  function calcCredits(semesterList) {
+    let total = 0;
+    let completed = 0;
+
+    for (const sem of semesterList) {
       for (const uc of sem.user_courses || []) {
         const credits = uc?.courses?.credits ?? 0;
         total += credits;
-        if (uc?.grade && PASSING_GRADES.has(uc.grade)) completed += credits;
+        if (uc?.grade && PASSING_GRADES.has(uc.grade)) {
+          completed += credits;
+        }
       }
     }
+
     return { completed, total };
   }
 
-  function calcElectivesProgress(semesters) {
+  function calcElectivesProgress(semesterList) {
     const EXCLUDED = new Set(["F", "W", "FAIL"]);
     const counted = [];
-    for (const sem of semesters) {
+
+    for (const sem of semesterList) {
       for (const uc of sem.user_courses || []) {
         if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
 
@@ -121,20 +139,18 @@ export default function Dashboard() {
     const { earned } = autoAssignBuckets(counted, ELECTIVE_REQUIREMENTS);
 
     return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
-      const e = earned[bucket] || 0;
+      const value = earned[bucket] || 0;
       return {
         bucket,
-        earned: e,
+        earned: value,
         required,
-        remaining: Math.max(0, required - e),
-        pct: required ? Math.min(100, Math.round((e / required) * 100)) : 0,
+        remaining: Math.max(0, required - value),
+        pct: required ? Math.min(100, Math.round((value / required) * 100)) : 0,
       };
     });
   }
 
-async function initialize(silent = false, planIdOverride = null) {
-    //if (!silent) setLoading(true);
-
+  async function initialize(silent = false, planIdOverride = null) {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
 
@@ -167,7 +183,6 @@ async function initialize(silent = false, planIdOverride = null) {
           .select();
 
         if (createError) throw createError;
-
         safePlans = createdPlans;
       }
 
@@ -197,7 +212,6 @@ async function initialize(silent = false, planIdOverride = null) {
 
       const safeSemesters = userSemesters || [];
       const semesterIds = safeSemesters.map((s) => s.id);
-
       let userCourses = [];
 
       if (semesterIds.length > 0) {
@@ -213,7 +227,6 @@ async function initialize(silent = false, planIdOverride = null) {
           .in("semester_id", semesterIds);
 
         if (coursesError) throw coursesError;
-
         userCourses = fetchedCourses || [];
       }
 
@@ -235,30 +248,28 @@ async function initialize(silent = false, planIdOverride = null) {
 
       setSemesters(formattedSemesters);
       setLoading(false);
-
     } catch (err) {
       console.error(err);
       setLoading(false);
     }
-    }
+  }
 
   async function fetchPrerequisiteCourses() {
-  try {
-    const { data, error } = await supabase
-      .from("courses")
-      .select(`
-        id, code, number, name, credits,
-        course_eligible_attributes ( attribute )
-      `)
-      .order("code", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(`
+          id, code, number, name, credits,
+          course_eligible_attributes ( attribute )
+        `)
+        .order("code", { ascending: true });
 
-    if (error) throw error;
-
-    setPrerequisiteCourses(data || []);
-  } catch (err) {
-    console.error("Error fetching courses:", err);
+      if (error) throw error;
+      setPrerequisiteCourses(data || []);
+    } catch (err) {
+      console.error("Error fetching courses:", err);
+    }
   }
-}
 
   useEffect(() => {
     initialize();
@@ -271,22 +282,83 @@ async function initialize(silent = false, planIdOverride = null) {
     }
   }, [selectedPlanId]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!semesters.length) {
+      setMobileQuickAddSemesterId("");
+      return;
+    }
+
+    setMobileQuickAddSemesterId((prev) => {
+      if (prev && semesters.some((semester) => semester.id === prev)) {
+        return prev;
+      }
+      return semesters[0].id;
+    });
+  }, [semesters]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileCatalogOpen(false);
+      setMobileElectivesOpen(false);
+    }
+  }, [isMobile]);
+
   async function updateSemesterStatus(id, newStatus) {
-  setSemesters((prev) =>
-    prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
-  );
+    setSemesters((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
+    );
 
-  const { error } = await supabase
-    .from("user_semesters")
-    .update({ status: newStatus })
-    .eq("id", id)
-    .eq("user_id", authUser.id);
+    const { error } = await supabase
+      .from("user_semesters")
+      .update({ status: newStatus })
+      .eq("id", id)
+      .eq("user_id", authUser.id);
 
-  if (error) {
-    console.error("Failed to update semester status:", error);
-    await initialize();
+    if (error) {
+      console.error("Failed to update semester status:", error);
+      await initialize();
+    }
   }
-}
+
+  async function updateSemesterLoadMode(id, newLoadMode) {
+    const targetCredits = LOAD_CONFIG[newLoadMode]?.targetCredits ?? 17;
+
+    setSemesters((prev) =>
+      prev.map((semester) =>
+        semester.id === id
+          ? {
+              ...semester,
+              load_mode: newLoadMode,
+              target_credits: targetCredits,
+            }
+          : semester,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("user_semesters")
+      .update({
+        load_mode: newLoadMode,
+        target_credits: targetCredits,
+      })
+      .eq("id", id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      console.error("Failed to update semester load mode:", error);
+      await initialize();
+    }
+  }
 
   async function updateCourseGrade(courseId, field, value) {
     setSemesters((prev) =>
@@ -301,11 +373,7 @@ async function initialize(silent = false, planIdOverride = null) {
     const updates = { [field]: value };
 
     if (field === "grade") {
-      if (value === "W" || value === "WF") {
-        updates.status = "dropped";
-      } else {
-        updates.status = "completed";
-      }
+      updates.status = value === "W" || value === "WF" ? "dropped" : "completed";
     }
 
     const { error } = await supabase
@@ -362,22 +430,24 @@ async function initialize(silent = false, planIdOverride = null) {
     await supabase.from("user_courses").delete().eq("id", courseId);
   }
 
-  // semesterTargetCredits comes from SemesterCard's own targetCredits state,
-  // passed up through the drop handler — no stale LOAD_LIMITS lookup needed.
   async function handleSidebarDrop(
     course,
     semesterId,
     electiveAttribute,
     semesterTargetCredits = 15,
   ) {
-    console.log("DROP:", course, semesterId, electiveAttribute);
+    if (!semesterId) {
+      alert("Please choose a semester first.");
+      return;
+    }
 
     if (course) {
       const targetSem = semesters.find((s) => s.id === semesterId);
-const alreadyEnrolledInThisSemester = targetSem?.user_courses?.some(
-  (uc) => uc.course_id === course.id && uc.semester_id === semesterId,
-);
-if (alreadyEnrolledInThisSemester) return;
+      const alreadyEnrolledInThisSemester = targetSem?.user_courses?.some(
+        (uc) => uc.course_id === course.id && uc.semester_id === semesterId,
+      );
+
+      if (alreadyEnrolledInThisSemester) return;
 
       const { data: prereqs, error: prereqError } = await supabase
         .from("prerequisites")
@@ -413,7 +483,7 @@ if (alreadyEnrolledInThisSemester) return;
 
           alert(
             `Missing prerequisites: ${(missingCourses || [])
-              .map((c) => `${c.code} ${c.number} – ${c.name}`)
+              .map((c) => `${c.code} ${c.number} - ${c.name}`)
               .join(", ")}`,
           );
           return;
@@ -427,9 +497,7 @@ if (alreadyEnrolledInThisSemester) return;
         .single();
 
       if (course.req_sem && semData?.semester_number < course.req_sem) {
-        alert(
-          `This course is intended for semester ${course.req_sem} or later.`,
-        );
+        alert(`This course is intended for semester ${course.req_sem} or later.`);
         return;
       }
 
@@ -486,21 +554,21 @@ if (alreadyEnrolledInThisSemester) return;
       attribute: attributeToUse,
       grade: null,
       courses: course
-  ? {
-      id: course.id,
-      name: course.name,
-      code: course.code,
-      number: course.number,
-      credits: course.credits,
-      course_eligible_attributes: course.course_eligible_attributes || [],
-    }
-  : {
-      id: null,
-      name: attributeToUse,
-      code: "ELECTIVE",
-      credits: 3,
-      course_eligible_attributes: [],
-    },
+        ? {
+            id: course.id,
+            name: course.name,
+            code: course.code,
+            number: course.number,
+            credits: course.credits,
+            course_eligible_attributes: course.course_eligible_attributes || [],
+          }
+        : {
+            id: null,
+            name: attributeToUse,
+            code: "ELECTIVE",
+            credits: 3,
+            course_eligible_attributes: [],
+          },
     };
 
     setSemesters((prev) =>
@@ -521,13 +589,13 @@ if (alreadyEnrolledInThisSemester) return;
         attribute: attributeToUse,
       })
       .select(`
-  *,
-  courses (
-    id, name, code, number, credits,
-    course_eligible_attributes ( attribute )
-  )
-`)
-.single();
+        *,
+        courses (
+          id, name, code, number, credits,
+          course_eligible_attributes ( attribute )
+        )
+      `)
+      .single();
 
     if (error) {
       console.error("Failed to add course:", error);
@@ -616,25 +684,91 @@ if (alreadyEnrolledInThisSemester) return;
     } finally {
       setAddingSemester(false);
     }
-    }
-
+  }
 
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
-
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateCredits(allCourses);
-
   const { completed } = calcCredits(semesters);
   const total = 120;
-  const percent = total ? Math.round((completed / total) * 100) : 0;
-  const safePercent = Math.min(100, Math.max(0, percent));
-  const remaining = Math.max(0, total - completed);
-
   const electiveRows = calcElectivesProgress(semesters);
   const electivesRemainingTotal = electiveRows.reduce(
-    (s, r) => s + r.remaining,
+    (sum, row) => sum + row.remaining,
     0,
   );
+  const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
+  const mobileElectivesPanel =
+    isMobile && mobileElectivesOpen ? (
+      <div style={{ padding: "0 16px 16px" }}>
+        <div
+          style={{
+            background: "white",
+            borderRadius: 14,
+            padding: 14,
+            border: "1px solid #eee",
+            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginBottom: 10,
+              gap: 8,
+            }}
+          >
+            <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
+            <span style={{ fontSize: 12, color: "#666" }}>
+              {electivesRemainingTotal} left
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {electiveRows.map((row) => (
+              <div
+                key={row.bucket}
+                style={{
+                  border: "1px solid #f0f0f0",
+                  borderRadius: 10,
+                  padding: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: 12,
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{row.bucket}</span>
+                  <span>
+                    {row.earned}/{row.required}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    height: 6,
+                    background: "#eee",
+                    borderRadius: 999,
+                    marginTop: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      height: 6,
+                      width: `${row.pct}%`,
+                      background: "#111",
+                      borderRadius: 999,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    ) : null;
 
   if (loading) {
     return <div style={{ padding: 20 }}>Initializing...</div>;
@@ -645,7 +779,6 @@ if (alreadyEnrolledInThisSemester) return;
       <CustomDragLayer />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
-        {/* ── Top nav ── */}
         <div
           style={{
             position: "sticky",
@@ -653,15 +786,23 @@ if (alreadyEnrolledInThisSemester) return;
             zIndex: 300,
             background: "#fff",
             borderBottom: "1px solid #e5e7eb",
-            padding: "14px 24px",
+            padding: isMobile ? "12px 16px" : "14px 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: 12,
+            flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button
-              onClick={() => setSidebarOpen((prev) => !prev)}
+              onClick={() => {
+                if (isMobile) {
+                  setMobileCatalogOpen((prev) => !prev);
+                } else {
+                  setSidebarOpen((prev) => !prev);
+                }
+              }}
               style={{
                 background: "none",
                 border: "none",
@@ -669,26 +810,50 @@ if (alreadyEnrolledInThisSemester) return;
                 display: "flex",
                 flexDirection: "column",
                 gap: 5,
+                padding: 6,
               }}
+              aria-label="Open course catalog"
             >
               <span style={{ width: 22, height: 2, background: "#111" }} />
               <span style={{ width: 22, height: 2, background: "#111" }} />
               <span style={{ width: 22, height: 2, background: "#111" }} />
             </button>
-            <span style={{ fontWeight: 600, fontSize: 25 }}>GradSIS</span>
+            <span style={{ fontWeight: 600, fontSize: isMobile ? 22 : 25 }}>
+              GradSIS
+            </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-            <div style={{ fontSize: 13, color: "#444", textAlign: "right" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: isMobile ? "stretch" : "center",
+              gap: isMobile ? 10 : 24,
+              width: isMobile ? "100%" : "auto",
+              justifyContent: isMobile ? "space-between" : "flex-end",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 13,
+                color: "#444",
+                textAlign: isMobile ? "left" : "right",
+                flex: isMobile ? 1 : "unset",
+                minWidth: 0,
+              }}
+            >
               <div style={{ fontWeight: 600 }}>
                 {authUser?.name || authUser?.email}
               </div>
-              <div>
-                GPA <b>{totalGPA}</b> • Hours <b>{totalHours}</b>
-              </div>
-              <div>
-                Credits <b>{completed}</b> / {total}
-              </div>
+              {!isMobile && (
+                <>
+                  <div>
+                    GPA <b>{totalGPA}</b> - Hours <b>{totalHours}</b>
+                  </div>
+                  <div>
+                    Credits <b>{completed}</b> / {total}
+                  </div>
+                </>
+              )}
             </div>
             <button
               onClick={handleSignOut}
@@ -699,78 +864,141 @@ if (alreadyEnrolledInThisSemester) return;
                 background: "#fafafa",
                 cursor: "pointer",
                 fontSize: 13,
+                minHeight: 40,
               }}
             >
               Sign Out
             </button>
           </div>
+
+          {isMobile && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 8,
+                width: "100%",
+              }}
+            >
+              {[
+                { label: "GPA", value: totalGPA },
+                { label: "Hours", value: totalHours },
+                { label: "Credits", value: `${completed}/${total}` },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 10,
+                    padding: "8px 10px",
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>
+                    {item.label}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#111" }}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* ── Page header ── */}
-        <div style={{ padding: "24px 24px 8px 24px" }}>
-  <div style={{ fontSize: 30, fontWeight: 700 }}>Dashboard</div>
+        <div style={{ padding: isMobile ? "20px 16px 8px" : "24px 24px 8px" }}>
+          <div style={{ fontSize: isMobile ? 24 : 30, fontWeight: 700 }}>
+            Dashboard
+          </div>
 
-  <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
-    Plan your past, current and future semesters, track your progress,
-    and explore electives.
-  </div>
+          <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: 1 }}>
+            Plan your past, current and future semesters, track your progress,
+            and explore electives.
+          </div>
 
-  <div
-    style={{
-      display: "flex",
-      gap: 10,
-      alignItems: "center",
-      marginTop: 14,
-      flexWrap: "wrap",
-    }}
-  >
-    <select
-      value={selectedPlanId}
-      onChange={(e) => setSelectedPlanId(e.target.value)}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 10,
-        border: "1px solid #ddd",
-        fontSize: 14,
-        background: "#fff",
-      }}
-    >
-      {plans.map((plan) => (
-        <option key={plan.id} value={plan.id}>
-          {plan.name}
-        </option>
-      ))}
-    </select>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              marginTop: 14,
+              flexWrap: "wrap",
+            }}
+          >
+            <select
+              value={selectedPlanId}
+              onChange={(e) => setSelectedPlanId(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                fontSize: 16,
+                background: "#fff",
+                minHeight: 44,
+              }}
+            >
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}
+                </option>
+              ))}
+            </select>
 
-  </div>
+            {isMobile && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMobileElectivesOpen((prev) => !prev)}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    color: "#111",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    minHeight: 44,
+                  }}
+                >
+                  {mobileElectivesOpen ? "Hide Electives" : "Show Electives"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-  <br />
-      </div>
+        {mobileElectivesPanel}
 
         <div
           style={{
             display: "flex",
-            gap: 24,
+            flexDirection: isMobile ? "column" : "row",
+            gap: isMobile ? 16 : 24,
             alignItems: "flex-start",
-            padding: "0 24px 24px 24px",
+            padding: isMobile ? "0 16px 24px" : "0 24px 24px",
           }}
         >
-          {sidebarOpen && (
-            <SidebarOverlay onClose={() => setSidebarOpen(false)} />
+          {drawerOpen && (
+            <SidebarOverlay
+              onClose={() => {
+                setSidebarOpen(false);
+                setMobileCatalogOpen(false);
+              }}
+            />
           )}
 
-          {/* ── Slide-out catalog sidebar ── */}
           <div
             style={{
               position: "fixed",
               top: 0,
               left: 0,
               height: "100vh",
-              width: 280,
+              width: isMobile ? "100%" : 280,
+              maxWidth: "100%",
               background: "#fff",
               boxShadow: "4px 0 20px rgba(0,0,0,0.12)",
               zIndex: 400,
-              transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+              transform: drawerOpen ? "translateX(0)" : "translateX(-100%)",
               transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
               display: "flex",
               flexDirection: "column",
@@ -789,7 +1017,10 @@ if (alreadyEnrolledInThisSemester) return;
                 Course Catalog
               </span>
               <button
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => {
+                  setSidebarOpen(false);
+                  setMobileCatalogOpen(false);
+                }}
                 style={{
                   background: "none",
                   border: "none",
@@ -798,27 +1029,39 @@ if (alreadyEnrolledInThisSemester) return;
                   color: "#6b7280",
                 }}
               >
-                ×
+                x
               </button>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto" }}>
               <PrerequisiteSidebar
-               courses={prerequisiteCourses}
-               enrolledCourseIds={new Set()}
-               electiveRows={electiveRows}
-               allUserCourses={allCourses}
+                courses={prerequisiteCourses}
+                enrolledCourseIds={
+                  new Set(allCourses.map((course) => course.course_id).filter(Boolean))
+                }
+                electiveRows={electiveRows}
+                allUserCourses={allCourses}
+                isMobile={isMobile}
+                mobileSemesterId={mobileQuickAddSemesterId}
+                onMobileSemesterChange={setMobileQuickAddSemesterId}
+                semesters={semesters}
+                onQuickAddCourse={(course) =>
+                  handleSidebarDrop(course, mobileQuickAddSemesterId, null)
+                }
+                onQuickAddElective={(bucket) =>
+                  handleSidebarDrop(null, mobileQuickAddSemesterId, bucket)
+                }
               />
             </div>
           </div>
 
-          {/* ── Semester list ── */}
           <div
             style={{
               flex: 1,
               display: "flex",
               flexDirection: "column",
               gap: 20,
+              width: "100%",
             }}
           >
             {semesters.map((sem) => (
@@ -828,14 +1071,15 @@ if (alreadyEnrolledInThisSemester) return;
                 userId={authUser?.id}
                 refresh={initialize}
                 updateStatus={updateSemesterStatus}
+                updateLoadMode={updateSemesterLoadMode}
                 updateCourse={updateCourseGrade}
                 moveCourse={moveCourse}
                 deleteCourse={deleteCourse}
                 onSidebarDrop={handleSidebarDrop}
+                isMobile={isMobile}
               />
             ))}
 
-            {/* ── Add semester ── */}
             <div
               style={{
                 background: "#fff",
@@ -845,7 +1089,9 @@ if (alreadyEnrolledInThisSemester) return;
                 boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
                 display: "flex",
                 gap: 10,
-                alignItems: "center",
+                alignItems: isMobile ? "stretch" : "center",
+                flexDirection: isMobile ? "column" : "row",
+                width: "100%",
               }}
             >
               <input
@@ -858,7 +1104,9 @@ if (alreadyEnrolledInThisSemester) return;
                   padding: "10px 12px",
                   borderRadius: 10,
                   border: "1px solid #ddd",
-                  fontSize: 14,
+                  fontSize: 16,
+                  minHeight: 44,
+                  width: isMobile ? "100%" : "auto",
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAddSemester();
@@ -875,6 +1123,8 @@ if (alreadyEnrolledInThisSemester) return;
                   color: "#fff",
                   cursor: "pointer",
                   fontSize: 14,
+                  minHeight: 44,
+                  width: isMobile ? "100%" : "auto",
                 }}
               >
                 {addingSemester ? "Adding..." : "Add Semester"}
@@ -882,77 +1132,77 @@ if (alreadyEnrolledInThisSemester) return;
             </div>
           </div>
 
-          {/* ── Electives panel ── */}
-          <div
-            style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}
-          >
-            <div
-              style={{
-                background: "white",
-                borderRadius: 14,
-                padding: 14,
-                border: "1px solid #eee",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              }}
-            >
+          {!isMobile && (
+            <div style={{ width: 320, flexShrink: 0, position: "sticky", top: 110 }}>
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 10,
+                  background: "white",
+                  borderRadius: 14,
+                  padding: 14,
+                  border: "1px solid #eee",
+                  boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
                 }}
               >
-                <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
-                <span style={{ fontSize: 12, color: "#666" }}>
-                  {electivesRemainingTotal} left
-                </span>
-              </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: 10,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>Electives</span>
+                  <span style={{ fontSize: 12, color: "#666" }}>
+                    {electivesRemainingTotal} left
+                  </span>
+                </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {electiveRows.map((r) => (
-                  <div
-                    key={r.bucket}
-                    style={{
-                      border: "1px solid #f0f0f0",
-                      borderRadius: 10,
-                      padding: 10,
-                    }}
-                  >
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {electiveRows.map((row) => (
                     <div
+                      key={row.bucket}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12,
-                      }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{r.bucket}</span>
-                      <span>
-                        {r.earned}/{r.required}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 6,
-                        background: "#eee",
-                        borderRadius: 999,
-                        marginTop: 6,
+                        border: "1px solid #f0f0f0",
+                        borderRadius: 10,
+                        padding: 10,
                       }}
                     >
                       <div
                         style={{
-                          height: 6,
-                          width: `${r.pct}%`,
-                          background: "#111",
-                          borderRadius: 999,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
                         }}
-                      />
+                      >
+                        <span style={{ fontWeight: 600 }}>{row.bucket}</span>
+                        <span>
+                          {row.earned}/{row.required}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 6,
+                          background: "#eee",
+                          borderRadius: 999,
+                          marginTop: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: 6,
+                            width: `${row.pct}%`,
+                            background: "#111",
+                            borderRadius: 999,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
+
       </div>
     </DndProvider>
   );
@@ -960,6 +1210,7 @@ if (alreadyEnrolledInThisSemester) return;
 
 function SidebarOverlay({ onClose }) {
   const isDragging = useDragLayer((monitor) => monitor.isDragging());
+
   return (
     <div
       onClick={onClose}

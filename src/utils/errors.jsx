@@ -8,6 +8,7 @@ export default function Prerequisite({
   onCourseRegistered,
   targetCredits = 17,
   currentCredits = 0,
+  loadMode = "normal",
 }) {
   const [passedCourseIds, setPassedCourseIds] = useState([]);
   const [blockedCourseIds, setBlockedCourseIds] = useState([]);
@@ -19,8 +20,14 @@ export default function Prerequisite({
   const [courseNumber, setCourseNumber] = useState("");
   const [selectedCourse, setSelectedCourse] = useState(null);
 
-  const MIN_CREDITS = 12;
-  const MAX_CREDITS = targetCredits;
+  const LOAD_RULES = {
+    underload: { min: 0, max: 11, label: "Underload" },
+    normal: { min: 12, max: 17, label: "Normal" },
+    overload: { min: 18, max: targetCredits, label: "Overload" },
+  };
+  const activeLoadRule = LOAD_RULES[loadMode] || LOAD_RULES.normal;
+  const MIN_CREDITS = activeLoadRule.min;
+  const MAX_CREDITS = activeLoadRule.max;
 
   const PASSED_GRADES = [
     "A+",
@@ -86,13 +93,17 @@ export default function Prerequisite({
   }, [targetCredits, currentCredits]);
 
   function checkCreditWarning(total) {
-    if (total < MIN_CREDITS) {
+    if (loadMode !== "underload" && total < MIN_CREDITS) {
       setCreditWarning(
-        `You are enrolled in only ${total} credits. Minimum required is ${MIN_CREDITS}.`,
+        `${activeLoadRule.label} requires at least ${MIN_CREDITS} credits. You currently have ${total}.`,
       );
     } else if (total > MAX_CREDITS) {
       setCreditWarning(
-        `You are enrolled in ${total} credits, which exceeds the maximum of ${MAX_CREDITS}.`,
+        `${activeLoadRule.label} allows up to ${MAX_CREDITS} credits. You currently have ${total}.`,
+      );
+    } else if (loadMode === "underload" && total >= 12) {
+      setCreditWarning(
+        `Underload is for fewer than 12 credits. You currently have ${total}.`,
       );
     } else {
       setCreditWarning("");
