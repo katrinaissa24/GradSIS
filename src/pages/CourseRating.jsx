@@ -15,6 +15,7 @@ export default function CourseRating() {
 
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState(null);
+  const [difficulty, setDifficulty] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -57,10 +58,15 @@ export default function CourseRating() {
     if (existing) {
       setUserReview(existing);
       setComment(existing.comment || "");
+      setDifficulty(existing.difficulty || 0);
     }
   }
 
   async function handleSubmit() {
+    if (difficulty === 0) {
+  setMessage({ text: "Please select a difficulty.", type: "error" });
+  return;
+}
     if (!comment.trim()) {
       setMessage({ text: "Please write a comment.", type: "error" });
       return;
@@ -71,7 +77,7 @@ export default function CourseRating() {
     if (userReview) {
       const { error } = await supabase
         .from("course_reviews")
-        .update({ comment })
+        .update({ comment, difficulty })
         .eq("id", userReview.id);
 
       if (error) {
@@ -83,7 +89,7 @@ export default function CourseRating() {
     } else {
       const { error } = await supabase
         .from("course_reviews")
-        .insert({ user_id: userId, course_id: courseId, comment });
+        .insert({ user_id: userId, course_id: courseId, comment, difficulty });
 
       if (error) {
         setMessage({ text: "Failed to submit review.", type: "error" });
@@ -123,7 +129,81 @@ export default function CourseRating() {
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
             {userReview ? "Update Your Review" : "Leave a Review"}
           </h2>
+<div style={{ marginBottom: 14 }}>
+  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+    Difficulty ({difficulty || 0}/5)
+  </div>
 
+  <div style={{ display: "flex", gap: 8 }}>
+    {[1, 2, 3, 4, 5].map((star) => {
+      let fillPercent = 0;
+      if (difficulty >= star) fillPercent = 100;
+      else if (difficulty >= star - 0.5) fillPercent = 50;
+
+      return (
+        <div
+          key={star}
+          style={{
+            position: "relative",
+            width: 28,
+            height: 28,
+            cursor: "pointer",
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            style={{ position: "absolute", inset: 0 }}
+          >
+            <path
+              d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
+              fill="#d1d5db"
+            />
+          </svg>
+
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: `${fillPercent}%`,
+              overflow: "hidden",
+            }}
+          >
+            <svg viewBox="0 0 24 24" style={{ width: 28, height: 28 }}>
+              <path
+                d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
+                fill="#facc15"
+              />
+            </svg>
+          </div>
+
+          <div
+            onClick={() => setDifficulty(star - 0.5)}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "50%",
+              height: "100%",
+              zIndex: 2,
+            }}
+          />
+
+          <div
+            onClick={() => setDifficulty(star)}
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              width: "50%",
+              height: "100%",
+              zIndex: 2,
+            }}
+          />
+        </div>
+      );
+    })}
+  </div>
+</div>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Comment</div>
             <textarea
@@ -182,24 +262,83 @@ export default function CourseRating() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {reviews.map((r) => (
-            <div key={r.id} style={{
-              background: "#fff", borderRadius: 12, padding: 16,
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              border: r.user_id === userId ? "2px solid #111" : "1px solid #eee",
-            }}>
-              {r.user_id === userId && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#111", marginBottom: 6, textTransform: "uppercase" }}>
-                  Your Review
-                </div>
-              )}
-              {r.comment && (
-                <div style={{ fontSize: 13, color: "#374151" }}>{r.comment}</div>
-              )}
-              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>
-                {new Date(r.created_at).toLocaleDateString()}
+  <div
+    key={r.id}
+    style={{
+      background: "#fff",
+      borderRadius: 14,
+      padding: 18,
+      boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+      border: r.user_id === userId ? "2px solid #111" : "1px solid #e5e7eb",
+    }}
+  >
+    {r.user_id === userId && (
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: "#111",
+          marginBottom: 10,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
+        Your Review
+      </div>
+    )}
+
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        {[1, 2, 3, 4, 5].map((star) => {
+          let fillPercent = 0;
+          if (r.difficulty >= star) fillPercent = 100;
+          else if (r.difficulty >= star - 0.5) fillPercent = 50;
+
+          return (
+            <div key={star} style={{ position: "relative", width: 18, height: 18 }}>
+              <svg viewBox="0 0 24 24" style={{ position: "absolute", inset: 0 }}>
+                <path
+                  d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
+                  fill="#d1d5db"
+                />
+              </svg>
+
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: `${fillPercent}%`,
+                  overflow: "hidden",
+                }}
+              >
+                <svg viewBox="0 0 24 24" style={{ width: 18, height: 18 }}>
+                  <path
+                    d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
+                    fill="#facc15"
+                  />
+                </svg>
               </div>
             </div>
-          ))}
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+        {r.difficulty}/5
+      </div>
+    </div>
+
+    {r.comment && (
+      <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.5 }}>
+        {r.comment}
+      </div>
+    )}
+
+    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 10 }}>
+      {new Date(r.created_at).toLocaleDateString()}
+    </div>
+  </div>
+))}
         </div>
       )}
     </div>
