@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
@@ -359,15 +359,27 @@ function DraggableCourseCard({
   disabled = false,
 }) {
   const navigate = useNavigate();
+  const ref = useRef(null);
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
-    item: () => ({
-      type: "SIDEBAR_COURSE",
-      course,
-      electiveAttribute: electiveAttribute ?? null,
-      grabOffsetX: 20,
-      grabOffsetY: 10,
-    }),
+    item: (monitor) => {
+      const rect = ref.current?.getBoundingClientRect();
+      const clientOffset = monitor.getClientOffset();
+
+      return {
+        type: "SIDEBAR_COURSE",
+        course,
+        electiveAttribute: electiveAttribute ?? null,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+        grabOffsetX: clientOffset?.x
+          ? clientOffset.x - (rect?.left ?? 0)
+          : (rect?.width ?? 0) / 2,
+        grabOffsetY: clientOffset?.y
+          ? clientOffset.y - (rect?.top ?? 0)
+          : (rect?.height ?? 0) / 2,
+      };
+    },
     canDrag: !isEnrolled && !isMobile,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
@@ -384,7 +396,10 @@ function DraggableCourseCard({
 
   return (
     <div
-      ref={!isEnrolled && !isMobile ? drag : undefined}
+      ref={!isEnrolled && !isMobile ? (node) => {
+        ref.current = node;
+        drag(node);
+      } : ref}
       title={
         isEnrolled
           ? "Already added to a semester"
@@ -482,6 +497,7 @@ function DraggableCourseCard({
           ))}
         </div>
       )}
+
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -534,15 +550,27 @@ function ElectiveSlotCard({
   onQuickAdd,
   disabled = false,
 }) {
+  const ref = useRef(null);
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
-    item: () => ({
-      type: "SIDEBAR_COURSE",
-      course: null,
-      electiveAttribute: bucket,
-      grabOffsetX: 20,
-      grabOffsetY: 10,
-    }),
+    item: (monitor) => {
+      const rect = ref.current?.getBoundingClientRect();
+      const clientOffset = monitor.getClientOffset();
+
+      return {
+        type: "SIDEBAR_COURSE",
+        course: null,
+        electiveAttribute: bucket,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+        grabOffsetX: clientOffset?.x
+          ? clientOffset.x - (rect?.left ?? 0)
+          : (rect?.width ?? 0) / 2,
+        grabOffsetY: clientOffset?.y
+          ? clientOffset.y - (rect?.top ?? 0)
+          : (rect?.height ?? 0) / 2,
+      };
+    },
     canDrag: !isMobile,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
@@ -555,7 +583,10 @@ function ElectiveSlotCard({
 
   return (
     <div
-      ref={!isMobile ? drag : undefined}
+      ref={!isMobile ? (node) => {
+        ref.current = node;
+        drag(node);
+      } : ref}
       style={{
         padding: "10px 11px",
         borderRadius: 9,

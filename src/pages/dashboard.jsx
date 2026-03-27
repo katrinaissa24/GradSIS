@@ -4,6 +4,8 @@ import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
 import { DndProvider, useDragLayer } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import { TouchBackend } from "react-dnd-touch-backend";
+import { MultiBackend, MouseTransition, TouchTransition } from "react-dnd-multi-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
 import {
   calculateCredits,
@@ -301,7 +303,46 @@ export default function Dashboard() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+useEffect(() => {
+  const EDGE_SIZE = 120;
+  const MAX_SPEED = 30;
+  let animFrame = null;
+  let currentY = null;
 
+  function onTouchMove(e) {
+    if (e.touches.length > 0) {
+      currentY = e.touches[0].clientY;
+    }
+  }
+
+  function onTouchEnd() {
+    currentY = null;
+  }
+
+  function scroll() {
+    if (currentY != null) {
+      const { innerHeight } = window;
+      let speed = 0;
+      if (currentY < EDGE_SIZE) {
+        speed = -MAX_SPEED * (1 - currentY / EDGE_SIZE);
+      } else if (currentY > innerHeight - EDGE_SIZE) {
+        speed = MAX_SPEED * ((currentY - (innerHeight - EDGE_SIZE)) / EDGE_SIZE);
+      }
+      if (speed !== 0) window.scrollBy(0, speed);
+    }
+    animFrame = requestAnimationFrame(scroll);
+  }
+
+  document.addEventListener("touchmove", onTouchMove, { passive: true });
+  document.addEventListener("touchend", onTouchEnd);
+  animFrame = requestAnimationFrame(scroll);
+
+  return () => {
+    document.removeEventListener("touchmove", onTouchMove);
+    document.removeEventListener("touchend", onTouchEnd);
+    if (animFrame) cancelAnimationFrame(animFrame);
+  };
+}, []);
   useEffect(() => {
     if (!semesters.length) {
       setMobileQuickAddSemesterId("");
@@ -700,6 +741,35 @@ export default function Dashboard() {
     }
   }
 
+  async function handleMobileQuickAddCourse(courseId) {
+    const course = prerequisiteCourses.find((entry) => entry.id === courseId);
+    if (!course) return;
+
+    const targetSemester = semesters.find(
+      (semester) => semester.id === mobileQuickAddSemesterId,
+    );
+
+    await handleSidebarDrop(
+      course,
+      mobileQuickAddSemesterId,
+      null,
+      targetSemester?.target_credits ?? 15,
+    );
+  }
+
+  async function handleMobileQuickAddElective(bucket) {
+    const targetSemester = semesters.find(
+      (semester) => semester.id === mobileQuickAddSemesterId,
+    );
+
+    await handleSidebarDrop(
+      null,
+      mobileQuickAddSemesterId,
+      bucket,
+      targetSemester?.target_credits ?? 15,
+    );
+  }
+
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateCredits(allCourses);
@@ -710,6 +780,18 @@ export default function Dashboard() {
     (sum, row) => sum + row.remaining,
     0,
   );
+const DND_OPTIONS = {
+  backends: [
+    { id: "html5", backend: HTML5Backend, transition: MouseTransition },
+    {
+      id: "touch",
+      backend: TouchBackend,
+      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
+      preview: true,
+      transition: TouchTransition,
+    },
+  ],
+};
   const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
   const mobileElectivesPanel =
     isMobile && mobileElectivesOpen ? (
@@ -789,7 +871,7 @@ export default function Dashboard() {
   }
 
   return (
-    <DndProvider backend={HTML5Backend}>
+    <DndProvider backend={MultiBackend} options={DND_OPTIONS}>
       <CustomDragLayer />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
@@ -1055,6 +1137,12 @@ export default function Dashboard() {
                 }
                 electiveRows={electiveRows}
                 allUserCourses={allCourses}
+                isMobile={isMobile}
+                mobileSemesterId={mobileQuickAddSemesterId}
+                onMobileSemesterChange={setMobileQuickAddSemesterId}
+                semesters={semesters}
+                onQuickAddCourse={handleMobileQuickAddCourse}
+                onQuickAddElective={handleMobileQuickAddElective}
               />
             </div>
           </div>

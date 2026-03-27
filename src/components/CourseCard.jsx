@@ -18,17 +18,21 @@ export default function CourseCard({
 
   const [{ isDragging }, drag] = useDrag({
     type: "COURSE",
-    canDrag: !isMobile,
+    canDrag: true,
     item: (monitor) => {
-      const rect = ref.current.getBoundingClientRect();
+      const rect = ref.current?.getBoundingClientRect();
       const clientOffset = monitor.getClientOffset();
       return {
         id: course.id,
         course,
-        width: rect.width,
-        height: rect.height,
-        grabOffsetX: clientOffset.x - rect.left,
-        grabOffsetY: clientOffset.y - rect.top,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+        grabOffsetX: clientOffset?.x
+          ? clientOffset.x - (rect?.left ?? 0)
+          : (rect?.width ?? 0) / 2,
+        grabOffsetY: clientOffset?.y
+          ? clientOffset.y - (rect?.top ?? 0)
+          : (rect?.height ?? 0) / 2,
       };
     },
     collect: (monitor) => ({
@@ -37,11 +41,7 @@ export default function CourseCard({
   });
 
   const [, drop] = useDrop({ accept: "COURSE" });
-  if (isMobile) {
-    drop(ref);
-  } else {
-    drag(drop(ref));
-  }
+  drag(drop(ref));
 
   async function updateField(field, value) {
     updateCourse(course.id, field, value);
@@ -56,8 +56,8 @@ export default function CourseCard({
     }
   }
 
-  if (isDragging && !dragPreview) {
-    return <div style={{ height: ref.current?.offsetHeight || 0 }} />;
+  if (isDragging && !dragPreview && !isMobile) {
+  return <div style={{ height: ref.current?.offsetHeight || 0 }} />;
   }
 
   return (
@@ -72,9 +72,10 @@ export default function CourseCard({
         alignItems: isMobile ? "stretch" : "center",
         flexDirection: isMobile ? "column" : "row",
         gap: 10,
-        cursor: isMobile ? "default" : "grab",
+        cursor: "grab",
         transition: "transform 0.2s ease, opacity 0.2s ease",
-        opacity: dragPreview ? 1 : isDragging ? 0 : 1,
+        opacity: dragPreview ? 1 : isDragging && !isMobile ? 0 : isDragging && isMobile ? 0.3 : 1,
+        touchAction: "none",
       }}
     >
       <div
@@ -92,7 +93,7 @@ export default function CourseCard({
             display: "grid",
             gridTemplateColumns: "repeat(2, 4px)",
             gap: 3,
-            cursor: isMobile ? "default" : "grab",
+            cursor: "grab",
             opacity: 0.6,
             padding: 4,
           }}
@@ -137,6 +138,8 @@ export default function CourseCard({
         <select
           value={course.attribute}
           onChange={(e) => updateField("attribute", e.target.value)}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           style={{
             padding: isMobile ? "6px 8px" : "8px 10px",
             borderRadius: 6,
@@ -156,6 +159,8 @@ export default function CourseCard({
         <select
           value={course.grade || ""}
           onChange={(e) => updateField("grade", e.target.value)}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           disabled={!canEditGrade}
           style={{
             padding: isMobile ? "6px 8px" : "8px 10px",
@@ -177,6 +182,8 @@ export default function CourseCard({
         </select>
 
         <button
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             if (window.confirm("Delete this course?")) {
