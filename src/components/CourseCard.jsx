@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { getEmptyImage } from "react-dnd-html5-backend";
+import { useRef, useEffect } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
@@ -16,7 +17,7 @@ export default function CourseCard({
   const ref = useRef(null);
   const compactHeight = isMobile ? 40 : 44;
 
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag, preview] = useDrag({
     type: "COURSE",
     canDrag: true,
     item: (monitor) => {
@@ -40,6 +41,10 @@ export default function CourseCard({
     }),
   });
 
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
   const [, drop] = useDrop({ accept: "COURSE" });
   drag(drop(ref));
 
@@ -57,7 +62,7 @@ export default function CourseCard({
   }
 
   if (isDragging && !dragPreview && !isMobile) {
-  return <div style={{ height: ref.current?.offsetHeight || 0 }} />;
+    return <div style={{ height: ref.current?.offsetHeight || 0 }} />;
   }
 
   return (
