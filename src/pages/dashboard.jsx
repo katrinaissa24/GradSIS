@@ -411,6 +411,25 @@ useEffect(() => {
     }
   }
 
+    async function updateSemesterLock(id, isLocked) {
+    setSemesters((prev) =>
+      prev.map((semester) =>
+        semester.id === id ? { ...semester, is_locked: isLocked } : semester,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("user_semesters")
+      .update({ is_locked: isLocked })
+      .eq("id", id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      console.error("Failed to update semester lock:", error);
+      await initialize();
+    }
+  }
+
   async function updateCourseGrade(courseId, field, value) {
     setSemesters((prev) =>
       prev.map((sem) => ({
@@ -1158,18 +1177,19 @@ const DND_OPTIONS = {
           >
             {semesters.map((sem) => (
               <SemesterCard
-                key={sem.id}
-                semester={sem}
-                userId={authUser?.id}
-                refresh={initialize}
-                updateStatus={updateSemesterStatus}
-                updateLoadMode={updateSemesterLoadMode}
-                updateCourse={updateCourseGrade}
-                moveCourse={moveCourse}
-                deleteCourse={deleteCourse}
-                onSidebarDrop={handleSidebarDrop}
-                isMobile={isMobile}
-              />
+              key={sem.id}
+              semester={sem}
+              userId={authUser?.id}
+              refresh={initialize}
+              updateStatus={updateSemesterStatus}
+              updateLoadMode={updateSemesterLoadMode}
+              updateLock={updateSemesterLock}
+              updateCourse={updateCourseGrade}
+              moveCourse={moveCourse}
+              deleteCourse={deleteCourse}
+              onSidebarDrop={handleSidebarDrop}
+              isMobile={isMobile}
+            />
             ))}
 
             <div

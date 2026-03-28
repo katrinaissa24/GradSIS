@@ -3,12 +3,13 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function SemesterCard({
   semester,
   updateStatus,
   updateLoadMode,
+  updateLock,
   updateCourse,
   moveCourse,
   userId,
@@ -30,6 +31,16 @@ export default function SemesterCard({
   const [deletingSemester, setDeletingSemester] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const loadMode = semester.load_mode || "normal";
+  const isLocked = !!semester.is_locked;
+  const canShowLockButton = semester.status === "previous";
+
+  useEffect(() => {
+  if (isLocked && showAddCourses) {
+      setShowAddCourses(false);
+    }
+  }, [isLocked, showAddCourses]);
+
   const LOAD_CONFIG = {
     underload: {
       label: "Underload",
@@ -47,7 +58,7 @@ export default function SemesterCard({
       targetCredits: 21,
     },
   };
-  const loadMode = semester.load_mode || "normal";
+
   const selectedLoad = LOAD_CONFIG[loadMode] ?? LOAD_CONFIG.normal;
   const targetCredits = selectedLoad.targetCredits;
   const colors = {
@@ -72,7 +83,11 @@ export default function SemesterCard({
         return (
           <button
             key={status}
-            onClick={() => updateStatus(semester.id, status)}
+            onClick={() => {
+            if (isLocked) return;
+            updateStatus(semester.id, status);
+            }}
+            disabled={isLocked}
             style={{
               padding: compactPadding,
               borderRadius: 6,
@@ -81,7 +96,8 @@ export default function SemesterCard({
               color: isActive ? color : "#6b7280",
               fontSize: isMobile ? 12 : 13,
               fontWeight: isActive ? 600 : 400,
-              cursor: "pointer",
+              cursor: isLocked ? "not-allowed" : "pointer",
+              opacity: isLocked ? 0.6 : 1,
               textTransform: "capitalize",
               transition: "all 0.2s",
               minHeight: compactHeight,
@@ -106,13 +122,18 @@ export default function SemesterCard({
       }}
     >
       <button
-        onClick={() => setIsEditingSemesterName(true)}
+        onClick={() => {
+          if (isLocked) return;
+          setIsEditingSemesterName(true);
+        }}
+        disabled={isLocked}
         style={{
           padding: compactPadding,
           borderRadius: 8,
           border: "1px solid #ddd",
           background: "#fff",
-          cursor: "pointer",
+          cursor: isLocked ? "not-allowed" : "pointer",
+          opacity: isLocked ? 0.6 : 1,
           fontSize: isMobile ? 12 : 13,
           minHeight: compactHeight,
         }}
@@ -178,7 +199,11 @@ export default function SemesterCard({
             <button
               key={mode}
               type="button"
-              onClick={() => updateLoadMode?.(semester.id, mode)}
+              onClick={() => {
+                if (isLocked) return;
+                updateLoadMode?.(semester.id, mode);
+              }}
+              disabled={isLocked}
               style={{
                 padding: isMobile ? "6px 4px" : "7px 6px",
                 borderRadius: 8,
@@ -186,7 +211,8 @@ export default function SemesterCard({
                 background: isActive ? "#111" : "#fff",
                 color: isActive ? "#fff" : "#374151",
                 minHeight: isMobile ? 32 : 34,
-                cursor: "pointer",
+                cursor: isLocked ? "not-allowed" : "pointer",
+                opacity: isLocked ? 0.6 : 1,
                 display: "flex",
                 flexDirection: "row",
                 justifyContent: "center",
@@ -232,7 +258,9 @@ export default function SemesterCard({
 
   const [{ isOver }, drop] = useDrop({
     accept: ["COURSE", "SIDEBAR_COURSE"],
+    canDrop: () => !isLocked,
     drop: async (item, monitor) => {
+      if (isLocked) return;
       const itemType = monitor.getItemType();
       if (itemType === "SIDEBAR_COURSE") {
         onSidebarDrop &&
@@ -436,6 +464,26 @@ export default function SemesterCard({
                 {isMobile && actionButtons}
               </div>
               {statusButtons}
+
+              {canShowLockButton && (
+                <button
+                  type="button"
+                  onClick={() => updateLock?.(semester.id, !isLocked)}
+                  style={{
+                    padding: isMobile ? "6px 10px" : "7px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${isLocked ? "#2563eb" : "#111"}`,
+                    background: isLocked ? "#2563eb" : "#fff",
+                    color: isLocked ? "#fff" : "#111",
+                    cursor: "pointer",
+                    fontSize: isMobile ? 12 : 13,
+                    minHeight: isMobile ? 34 : 36,
+                    width: "fit-content",
+                  }}
+                >
+                  {isLocked ? "Unlock" : "Lock"}
+                </button>
+              )}
             </div>
 
             <div
@@ -465,13 +513,14 @@ export default function SemesterCard({
       >
         {semester.user_courses.map((course) => (
           <CourseCard
-            key={course.id}
-            course={course}
-            semesterStatus={semester.status}
-            updateCourse={updateCourse}
-            deleteCourse={deleteCourse}
-            isMobile={isMobile}
-          />
+          key={course.id}
+          course={course}
+          semesterStatus={semester.status}
+          isLocked={isLocked}
+          updateCourse={updateCourse}
+          deleteCourse={deleteCourse}
+          isMobile={isMobile}
+        />
         ))}
       </div>
 
@@ -497,25 +546,29 @@ export default function SemesterCard({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowAddCourses((prev) => !prev)}
-        style={{
-          marginTop: 8,
-          padding: compactPadding,
-          borderRadius: 8,
-          border: "1px solid #000",
-          background: "#fff",
-          color: "#000",
-          cursor: "pointer",
-          fontSize: isMobile ? 12 : 13,
-          minHeight: compactHeight,
-          width: "auto",
-          alignSelf: "flex-start",
-        }}
-      >
-        {showAddCourses ? "Close" : "+ Add Course"}
-      </button>
+      {!isLocked && (
+  <button
+    type="button"
+    onClick={() => {
+      setShowAddCourses((prev) => !prev);
+    }}
+    style={{
+      marginTop: 8,
+      padding: compactPadding,
+      borderRadius: 8,
+      border: "1px solid #000",
+      background: "#fff",
+      color: "#000",
+      cursor: "pointer",
+      fontSize: isMobile ? 12 : 13,
+      minHeight: compactHeight,
+      width: "auto",
+      alignSelf: "flex-start",
+    }}
+  >
+    {showAddCourses ? "Close" : "+ Add Course"}
+  </button>
+)}
 
       {showAddCourses && (
         <div style={{ marginTop: 16 }}>
