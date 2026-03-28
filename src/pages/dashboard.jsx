@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
   const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
+  const [isSignOutHovered, setIsSignOutHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= MOBILE_BREAKPOINT
@@ -976,14 +977,18 @@ const DND_OPTIONS = {
             </div>
             <button
               onClick={handleSignOut}
+              onMouseEnter={() => setIsSignOutHovered(true)}
+              onMouseLeave={() => setIsSignOutHovered(false)}
               style={{
                 padding: "7px 14px",
                 borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fafafa",
+                border: isSignOutHovered ? "1px solid #dc2626" : "1px solid #ddd",
+                background: isSignOutHovered ? "#dc2626" : "#fafafa",
+                color: isSignOutHovered ? "#fff" : "#111",
                 cursor: "pointer",
                 fontSize: 13,
                 minHeight: 40,
+                transition: "all 0.2s ease",
               }}
             >
               Sign Out
