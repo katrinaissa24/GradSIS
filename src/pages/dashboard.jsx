@@ -142,12 +142,15 @@ export default function Dashboard() {
 
     return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
       const value = earned[bucket] || 0;
+      const isComplete = value >= required;
+
       return {
         bucket,
         earned: value,
         required,
         remaining: Math.max(0, required - value),
         pct: required ? Math.min(100, Math.round((value / required) * 100)) : 0,
+        isComplete,
       };
     });
   }
@@ -843,10 +846,11 @@ const DND_OPTIONS = {
               <div
                 key={row.bucket}
                 style={{
-                  border: "1px solid #f0f0f0",
-                  borderRadius: 10,
-                  padding: 10,
-                }}
+                border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
+                borderRadius: 10,
+                padding: 10,
+                background: row.isComplete ? "#f0fdf4" : "#fff",
+              }}
               >
                 <div
                   style={{
@@ -871,11 +875,11 @@ const DND_OPTIONS = {
                 >
                   <div
                     style={{
-                      height: 6,
-                      width: `${row.pct}%`,
-                      background: "#111",
-                      borderRadius: 999,
-                    }}
+                    height: 6,
+                    width: `${row.pct}%`,
+                    background: row.isComplete ? "#16a34a" : "#111",
+                    borderRadius: 999,
+                  }}
                   />
                 </div>
               </div>
@@ -1284,10 +1288,11 @@ const DND_OPTIONS = {
                     <div
                       key={row.bucket}
                       style={{
-                        border: "1px solid #f0f0f0",
-                        borderRadius: 10,
-                        padding: 10,
-                      }}
+                      border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
+                      borderRadius: 10,
+                      padding: 10,
+                      background: row.isComplete ? "#f0fdf4" : "#fff",
+                    }}
                     >
                       <div
                         style={{
@@ -1302,22 +1307,22 @@ const DND_OPTIONS = {
                         </span>
                       </div>
                       <div
+                      style={{
+                        height: 6,
+                        background: "#eee",
+                        borderRadius: 999,
+                        marginTop: 6,
+                      }}
+                    >
+                      <div
                         style={{
                           height: 6,
-                          background: "#eee",
+                          width: `${row.pct}%`,
+                          background: row.isComplete ? "#16a34a" : "#111",
                           borderRadius: 999,
-                          marginTop: 6,
                         }}
-                      >
-                        <div
-                          style={{
-                            height: 6,
-                            width: `${row.pct}%`,
-                            background: "#111",
-                            borderRadius: 999,
-                          }}
-                        />
-                      </div>
+                      />
+                    </div>
                     </div>
                   ))}
                 </div>
