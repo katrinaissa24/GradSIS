@@ -15,6 +15,8 @@ export default function CourseRating() {
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const [sortOption, setSortOption] = useState("newest");
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -141,6 +143,23 @@ export default function CourseRating() {
 
     setSubmitting(false);
   }
+
+  const visibleReviews = reviews
+    .filter((review) => {
+      if (ratingFilter === "all") return true;
+      return Number(review.difficulty || 0) >= Number(ratingFilter);
+    })
+    .sort((a, b) => {
+      if (sortOption === "highest") {
+        return Number(b.difficulty || 0) - Number(a.difficulty || 0);
+      }
+
+      if (sortOption === "lowest") {
+        return Number(a.difficulty || 0) - Number(b.difficulty || 0);
+      }
+
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   if (loading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!course) return <div style={{ padding: 24 }}>Course not found.</div>;
@@ -355,15 +374,76 @@ export default function CourseRating() {
       )}
 
       {/* Reviews list */}
-      <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>
-        {reviews.length} Review{reviews.length !== 1 ? "s" : ""}
-      </h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+            {visibleReviews.length} Review{visibleReviews.length !== 1 ? "s" : ""}
+          </h2>
+          {reviews.length > 0 && visibleReviews.length !== reviews.length && (
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Showing {visibleReviews.length} of {reviews.length} reviews
+            </div>
+          )}
+        </div>
+
+        {reviews.length > 0 && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#4b5563" }}>
+              Filter by rating
+              <select
+                value={ratingFilter}
+                onChange={(e) => setRatingFilter(e.target.value)}
+                style={{
+                  minWidth: 140,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  fontSize: 13,
+                  color: "#111827",
+                }}
+              >
+                <option value="all">All ratings</option>
+                <option value="4">4 stars & up</option>
+                <option value="3">3 stars & up</option>
+                <option value="2">2 stars & up</option>
+                <option value="1">1 star & up</option>
+              </select>
+            </label>
+
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#4b5563" }}>
+              Sort reviews
+              <select
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value)}
+                style={{
+                  minWidth: 140,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  fontSize: 13,
+                  color: "#111827",
+                }}
+              >
+                <option value="newest">Newest first</option>
+                <option value="highest">Highest rating</option>
+                <option value="lowest">Lowest rating</option>
+              </select>
+            </label>
+          </div>
+        )}
+      </div>
 
       {reviews.length === 0 ? (
         <div style={{ color: "#9ca3af", fontSize: 14 }}>No reviews yet. Be the first!</div>
+      ) : visibleReviews.length === 0 ? (
+        <div style={{ color: "#9ca3af", fontSize: 14 }}>
+          No reviews match the selected rating filter.
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {reviews.map((r) => (
+          {visibleReviews.map((r) => (
   <div
     key={r.id}
     style={{
