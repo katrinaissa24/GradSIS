@@ -223,3 +223,92 @@
     justify-content: center;   
     margin: 25px auto 10px;
 }
+
+@media (max-width: 768px) {
+    .auth-page {
+        flex-direction: column;
+        justify-content: flex-start;
+        min-height: 100dvh;
+        align-items: flex-start;
+        padding: 20px 16px 28px;
+        box-sizing: border-box;
+    }
+
+    .left-side-container {
+        position: static;
+        width: 100%;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .gradsis-logo {
+        font-size: 18px;
+    }
+
+    .homepage-button {
+        font-size: 11px;
+        padding: 7px 14px;
+    }
+
+    .container {
+        width: 100%;
+        max-width: 420px;
+        align-self: center;
+        margin-top: 0;
+        padding: 0 0 20px;
+    }
+
+    .header {
+        margin-top: 16px;
+        padding: 0 16px;
+        box-sizing: border-box;
+    }
+
+    .tab-container {
+        width: 100%;
+        gap: 10px;
+        margin: 18px auto 10px;
+    }
+
+    .tab-container .submit {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+    }
+
+    .text {
+        font-size: 26px;
+    }
+
+    .message,
+    .input,
+    .forgot-password,
+    .submit-container {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .message,
+    .inputs {
+        padding: 0 16px;
+        box-sizing: border-box;
+    }
+
+    .input input {
+        width: 100%;
+        min-width: 0;
+        padding-right: 12px;
+    }
+
+    .forgot-password {
+        margin-top: 10px;
+    }
+
+    .submit-container {
+        margin: 20px auto 8px;
+    }
+
+    .submit-container .submit {
+        width: 100%;
+    }
+}

@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
   const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
+  const [isSignOutHovered, setIsSignOutHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= MOBILE_BREAKPOINT
@@ -142,12 +143,15 @@ export default function Dashboard() {
 
     return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
       const value = earned[bucket] || 0;
+      const isComplete = value >= required;
+
       return {
         bucket,
         earned: value,
         required,
         remaining: Math.max(0, required - value),
         pct: required ? Math.min(100, Math.round((value / required) * 100)) : 0,
+        isComplete,
       };
     });
   }
@@ -407,6 +411,25 @@ useEffect(() => {
 
     if (error) {
       console.error("Failed to update semester load mode:", error);
+      await initialize();
+    }
+  }
+
+    async function updateSemesterLock(id, isLocked) {
+    setSemesters((prev) =>
+      prev.map((semester) =>
+        semester.id === id ? { ...semester, is_locked: isLocked } : semester,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("user_semesters")
+      .update({ is_locked: isLocked })
+      .eq("id", id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      console.error("Failed to update semester lock:", error);
       await initialize();
     }
   }
@@ -824,10 +847,11 @@ const DND_OPTIONS = {
               <div
                 key={row.bucket}
                 style={{
-                  border: "1px solid #f0f0f0",
-                  borderRadius: 10,
-                  padding: 10,
-                }}
+                border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
+                borderRadius: 10,
+                padding: 10,
+                background: row.isComplete ? "#f0fdf4" : "#fff",
+              }}
               >
                 <div
                   style={{
@@ -852,11 +876,11 @@ const DND_OPTIONS = {
                 >
                   <div
                     style={{
-                      height: 6,
-                      width: `${row.pct}%`,
-                      background: "#111",
-                      borderRadius: 999,
-                    }}
+                    height: 6,
+                    width: `${row.pct}%`,
+                    background: row.isComplete ? "#16a34a" : "#111",
+                    borderRadius: 999,
+                  }}
                   />
                 </div>
               </div>
@@ -953,14 +977,18 @@ const DND_OPTIONS = {
             </div>
             <button
               onClick={handleSignOut}
+              onMouseEnter={() => setIsSignOutHovered(true)}
+              onMouseLeave={() => setIsSignOutHovered(false)}
               style={{
                 padding: "7px 14px",
                 borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fafafa",
+                border: isSignOutHovered ? "1px solid #dc2626" : "1px solid #ddd",
+                background: isSignOutHovered ? "#dc2626" : "#fafafa",
+                color: isSignOutHovered ? "#fff" : "#111",
                 cursor: "pointer",
                 fontSize: 13,
                 minHeight: 40,
+                transition: "all 0.2s ease",
               }}
             >
               Sign Out
@@ -1158,18 +1186,19 @@ const DND_OPTIONS = {
           >
             {semesters.map((sem) => (
               <SemesterCard
-                key={sem.id}
-                semester={sem}
-                userId={authUser?.id}
-                refresh={initialize}
-                updateStatus={updateSemesterStatus}
-                updateLoadMode={updateSemesterLoadMode}
-                updateCourse={updateCourseGrade}
-                moveCourse={moveCourse}
-                deleteCourse={deleteCourse}
-                onSidebarDrop={handleSidebarDrop}
-                isMobile={isMobile}
-              />
+              key={sem.id}
+              semester={sem}
+              userId={authUser?.id}
+              refresh={initialize}
+              updateStatus={updateSemesterStatus}
+              updateLoadMode={updateSemesterLoadMode}
+              updateLock={updateSemesterLock}
+              updateCourse={updateCourseGrade}
+              moveCourse={moveCourse}
+              deleteCourse={deleteCourse}
+              onSidebarDrop={handleSidebarDrop}
+              isMobile={isMobile}
+            />
             ))}
 
             <div
@@ -1264,10 +1293,11 @@ const DND_OPTIONS = {
                     <div
                       key={row.bucket}
                       style={{
-                        border: "1px solid #f0f0f0",
-                        borderRadius: 10,
-                        padding: 10,
-                      }}
+                      border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
+                      borderRadius: 10,
+                      padding: 10,
+                      background: row.isComplete ? "#f0fdf4" : "#fff",
+                    }}
                     >
                       <div
                         style={{
@@ -1282,22 +1312,22 @@ const DND_OPTIONS = {
                         </span>
                       </div>
                       <div
+                      style={{
+                        height: 6,
+                        background: "#eee",
+                        borderRadius: 999,
+                        marginTop: 6,
+                      }}
+                    >
+                      <div
                         style={{
                           height: 6,
-                          background: "#eee",
+                          width: `${row.pct}%`,
+                          background: row.isComplete ? "#16a34a" : "#111",
                           borderRadius: 999,
-                          marginTop: 6,
                         }}
-                      >
-                        <div
-                          style={{
-                            height: 6,
-                            width: `${row.pct}%`,
-                            background: "#111",
-                            borderRadius: 999,
-                          }}
-                        />
-                      </div>
+                      />
+                    </div>
                     </div>
                   ))}
                 </div>
