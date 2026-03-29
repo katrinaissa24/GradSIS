@@ -81,7 +81,7 @@ export default function Dashboard() {
     "Cultures & Histories": "Cultures and Histories",
     "Societies & Individuals": "Societies and Individuals",
     "Understanding the World": "Understanding the World",
-    Elective: "Technical Elective",
+    "Technical Elective": "Technical Elective",
     CEL: "Community Engaged Learning",
   };
 
