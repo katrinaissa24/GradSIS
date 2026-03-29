@@ -19,6 +19,8 @@ export default function Prerequisite({
   const [codePrefix, setCodePrefix] = useState("");
   const [courseNumber, setCourseNumber] = useState("");
   const [selectedCourse, setSelectedCourse] = useState(null);
+  const [rating, setRating] = useState(null);
+  const [recommend, setRecommend] = useState(null);
 
   const LOAD_RULES = {
     underload: { min: 0, max: 11, label: "Underload" },
@@ -159,7 +161,35 @@ export default function Prerequisite({
 }
 
     setSelectedCourse(data);
-    setMessage(null);
+    const { data: reviews } = await supabase
+      .from("course_reviews")
+      .select("difficulty, would_recommend")
+      .eq("course_id", data.id);
+
+    if (reviews && reviews.length > 0) {
+      const avg =
+        reviews.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
+        reviews.length;
+
+      setRating({
+                  avg,
+                  count: reviews.length,
+                });
+              } else {
+                setRating(null);
+              }
+              setMessage(null);
+
+              const recommendCount = reviews.filter(
+            (r) => r.would_recommend === true
+          ).length;
+
+          const percent =
+            reviews.length > 0
+              ? Math.round((recommendCount / reviews.length) * 100)
+              : 0;
+
+          setRecommend(percent);
   }
 
   async function handleSelect() {
@@ -363,6 +393,16 @@ export default function Prerequisite({
               {selectedCourse.code} {selectedCourse.number}
             </span>
             <span className="course-name">{selectedCourse.name}</span>
+            {rating && (
+              <span className="course-rating">
+                ⭐ {rating.avg.toFixed(1)} / 5 ({rating.count} reviews)
+              </span>
+            )}
+            {recommend !== null && (
+              <span className="course-recommend">
+                👍 {recommend}% recommend
+              </span>
+            )}
             <span className="course-credits">
               + {selectedCourse.credits} credits
             </span>

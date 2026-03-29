@@ -3,7 +3,7 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function SemesterCard({
   semester,
@@ -29,6 +29,8 @@ export default function SemesterCard({
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [semesterDifficulty, setSemesterDifficulty] = useState(null);
+  const [missingRatings, setMissingRatings] = useState(false);
 
   const LOAD_CONFIG = {
     underload: {
@@ -55,6 +57,57 @@ export default function SemesterCard({
     present: "#10b981",
     future: "#2563eb",
   };
+
+  useEffect(() => {
+    async function calculateDifficulty() {
+      if (!semester.user_courses.length) return;
+
+      const courseIds = semester.user_courses.map(c => c.course_id);
+
+      const { data } = await supabase
+        .from("course_reviews")
+        .select("course_id, difficulty")
+        .in("course_id", courseIds);
+
+      let totalWeightedDifficulty = 0;
+      let totalCredits = 0;
+
+      let missing = false;
+
+      semester.user_courses.forEach(course => {
+        const reviews = data?.filter(r => r.course_id === course.course_id) || [];
+
+        if (reviews.length === 0) {
+          missing = true;
+          return;
+        }
+
+        const avgDifficulty =
+          reviews.reduce((sum, r) => sum + r.difficulty, 0) / reviews.length;
+
+        const credits = course.courses?.credits || 3;
+
+        totalWeightedDifficulty += avgDifficulty * credits;
+        totalCredits += credits;
+      });
+
+      if (!missing && totalCredits > 0) {
+        const avgDifficulty = totalWeightedDifficulty / totalCredits;
+
+        const loadFactor = totalCredits / 17;
+
+        const adjustedDifficulty = avgDifficulty * loadFactor;
+
+        setSemesterDifficulty(adjustedDifficulty);
+      } else {
+        setSemesterDifficulty(null);
+      }
+
+      setMissingRatings(missing || data.length === 0);
+    }
+
+    calculateDifficulty();
+  }, [semester.user_courses]);
 
   const statusButtons = (
     <div
@@ -495,6 +548,28 @@ export default function SemesterCard({
         <div>
           Semester GPA: <b>{gpa}</b>
         </div>
+        {semesterDifficulty ? (
+          <div>
+            Difficulty: <b>
+              {semesterDifficulty < 1.5
+                ? "🟢 Very Light"
+                : semesterDifficulty < 2.5
+                ? "🟡 Light"
+                : semesterDifficulty < 3.5
+                ? "🟠 Moderate"
+                : semesterDifficulty < 4.5
+                ? "🔴 Hard"
+                : "🔥 Very Hard"}
+            </b>
+          </div>
+        ) : null}
+
+      {missingRatings && (
+        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+          ⚠ Some courses in this semester are not rated yet.
+        </div>
+      )}
+
       </div>
 
       <button

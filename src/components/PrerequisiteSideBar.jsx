@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
+import { supabase } from "../services/supabase";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
   { bucket: "Community Engaged Learning", required: 1 },
@@ -359,6 +360,8 @@ function DraggableCourseCard({
   disabled = false,
 }) {
   const navigate = useNavigate();
+  const [rating, setRating] = useState(null);
+  const [recommend, setRecommend] = useState(null);
   const ref = useRef(null);
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
@@ -385,6 +388,44 @@ function DraggableCourseCard({
       isDragging: !!monitor.isDragging(),
     }),
   });
+
+  useEffect(() => {
+    async function loadRating() {
+      const { data } = await supabase
+        .from("course_reviews")
+        .select("difficulty, would_recommend")
+        .eq("course_id", course.id);
+
+      if (!data || data.length === 0) {
+        setRating({ avg: 0, count: 0 });
+        return;
+      }
+
+      const avg =
+        data.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
+        data.length;
+
+        const recommendCount = data.filter(
+          (r) => r.would_recommend === true
+        ).length;
+
+        const percent =
+          data.length > 0
+            ? Math.round((recommendCount / data.length) * 100)
+            : 0;
+
+        setRecommend(percent);
+
+      setRating({
+        avg,
+        count: data.length,
+      });
+    }
+
+    loadRating();
+  }, [course.id]);
+
+  
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
@@ -474,6 +515,18 @@ function DraggableCourseCard({
       >
         {course.name}
       </div>
+
+      {rating && rating.count > 0 && (
+        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+          ⭐ {rating.avg.toFixed(1)} / 5 ({rating.count})
+        </div>
+      )}
+
+      {recommend !== null && (
+        <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>
+          👍 {recommend}% recommend
+        </div>
+      )}
 
       {attrs.length > 0 && (
         <div
