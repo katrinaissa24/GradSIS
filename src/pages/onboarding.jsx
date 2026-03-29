@@ -74,6 +74,15 @@ function CustomDropdown({ value, onChange, options, placeholder }) {
 
 export default function OnBoarding() {
   const navigate = useNavigate();
+  const searchParams =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search)
+      : null;
+  const isPreviewMode =
+    import.meta.env.DEV && searchParams?.get("preview") === "1";
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  );
   const [profile, setProfile] = useState({
     academicStanding: "",
     major: "",
@@ -116,7 +125,7 @@ export default function OnBoarding() {
         }
 
         // If both fields are filled, redirect to dashboard
-        if (hasCompletedOnboarding(userData)) {
+        if (!isPreviewMode && hasCompletedOnboarding(userData)) {
           navigate("/dashboard");
           return;
         }
@@ -129,7 +138,7 @@ export default function OnBoarding() {
     };
 
     checkExistingProfile();
-  }, [navigate]);
+  }, [isPreviewMode, navigate]);
 
   useEffect(() => {
     const loadMajors = async () => {
@@ -159,6 +168,15 @@ export default function OnBoarding() {
     };
 
     loadStartingTerms();
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const isComplete = isProfileComplete(profile);
@@ -326,8 +344,8 @@ async function saveProfile() {
   // Show loading while checking profile
   if (checkingProfile) {
     return (
-      <div style={styles.page}>
-        <div style={styles.card}>
+      <div style={{ ...styles.page, ...(isMobile && styles.pageMobile) }}>
+        <div style={{ ...styles.card, ...(isMobile && styles.cardMobile) }}>
           <p style={{ textAlign: "center", color: "#047857" }}>Loading...</p>
         </div>
       </div>
@@ -335,15 +353,21 @@ async function saveProfile() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
+    <div style={{ ...styles.page, ...(isMobile && styles.pageMobile) }}>
+      <div style={{ ...styles.card, ...(isMobile && styles.cardMobile) }}>
         {/* Header */}
-        <h1 style={styles.title}>GradSIS</h1>
-        <p style={styles.subtitle}>American University of Beirut</p>
-        <div style={styles.divider}></div>
+        <h1 style={{ ...styles.title, ...(isMobile && styles.titleMobile) }}>
+          GradSIS
+        </h1>
+        <p
+          style={{ ...styles.subtitle, ...(isMobile && styles.subtitleMobile) }}
+        >
+          American University of Beirut
+        </p>
+        <div style={{ ...styles.divider, ...(isMobile && styles.dividerMobile) }}></div>
 
         {/* Form */}
-        <div style={styles.form}>
+        <div style={{ ...styles.form, ...(isMobile && styles.formMobile) }}>
           {/* Academic Standing */}
           <label style={styles.label}>Academic Standing *</label>
           <CustomDropdown
@@ -384,6 +408,7 @@ async function saveProfile() {
             disabled={!isComplete || loading}
             style={{
               ...styles.button,
+              ...(isMobile && styles.buttonMobile),
               ...((!isComplete || loading) && styles.buttonDisabled),
             }}
           >
@@ -401,11 +426,19 @@ const styles = {
     justifyContent: "center",
     alignItems: "center",
     width: "100vw",
-    height: "100vh",
+    minHeight: "100vh",
     background: "linear-gradient(135deg, #ecfdf5, #d1fae5)",
     fontFamily: "Arial, sans-serif",
     padding: 0,
     margin: 0,
+    boxSizing: "border-box",
+  },
+  pageMobile: {
+    width: "100%",
+    minHeight: "100dvh",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: "20px 16px 28px",
   },
   card: {
     width: "100%",
@@ -414,6 +447,12 @@ const styles = {
     borderRadius: 16,
     padding: 30,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+    boxSizing: "border-box",
+  },
+  cardMobile: {
+    maxWidth: "100%",
+    padding: 20,
+    borderRadius: 14,
   },
   title: {
     color: "#047857",
@@ -422,12 +461,20 @@ const styles = {
     margin: 0,
     textAlign: "center",
   },
+  titleMobile: {
+    fontSize: 24,
+  },
   subtitle: {
     color: "#065f46",
     fontSize: 14,
     textAlign: "center",
     marginTop: 5,
     marginBottom: 15,
+  },
+  subtitleMobile: {
+    fontSize: 13,
+    lineHeight: 1.4,
+    marginBottom: 12,
   },
   divider: {
     width: 50,
@@ -436,7 +483,13 @@ const styles = {
     margin: "10px auto 20px",
     borderRadius: 2,
   },
+  dividerMobile: {
+    margin: "10px auto 16px",
+  },
   form: { display: "flex", flexDirection: "column", gap: 15 },
+  formMobile: {
+    gap: 12,
+  },
   label: { fontSize: 14, fontWeight: 600, color: "#374151" },
   input: {
     padding: 12,
@@ -461,6 +514,10 @@ const styles = {
     cursor: "pointer",
     marginTop: 15,
     transition: "all 0.2s ease",
+  },
+  buttonMobile: {
+    width: "100%",
+    marginTop: 12,
   },
   buttonDisabled: { backgroundColor: "#9ca3af", cursor: "not-allowed" },
 

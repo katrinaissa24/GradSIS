@@ -187,61 +187,53 @@ export default function SemesterCard({
       </div>
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: 6,
+          position: "relative",
           width: "100%",
         }}
       >
-        {Object.entries(LOAD_CONFIG).map(([mode, config]) => {
-          const isActive = loadMode === mode;
-          return (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => {
-                if (isLocked) return;
-                updateLoadMode?.(semester.id, mode);
-              }}
-              disabled={isLocked}
-              style={{
-                padding: isMobile ? "6px 4px" : "7px 6px",
-                borderRadius: 8,
-                border: isActive ? "2px solid #111" : "1px solid #d1d5db",
-                background: isActive ? "#111" : "#fff",
-                color: isActive ? "#fff" : "#374151",
-                minHeight: isMobile ? 32 : 34,
-                cursor: isLocked ? "not-allowed" : "pointer",
-                opacity: isLocked ? 0.6 : 1,
-                display: "flex",
-                flexDirection: "row",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: 4,
-                textAlign: "center",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: isMobile ? 11 : 12,
-                  fontWeight: 700,
-                  lineHeight: 1,
-                }}
-              >
-                {config.label}
-              </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  opacity: isActive ? 0.85 : 0.7,
-                  lineHeight: 1,
-                }}
-              >
-                {config.shortLabel}
-              </span>
-            </button>
-          );
-        })}
+        <select
+          value={loadMode}
+          onChange={(e) => {
+            if (isLocked) return;
+            updateLoadMode?.(semester.id, e.target.value);
+          }}
+          disabled={isLocked}
+          style={{
+            width: "100%",
+            minHeight: isMobile ? 40 : 42,
+            padding: isMobile ? "8px 38px 8px 12px" : "10px 40px 10px 14px",
+            borderRadius: 8,
+            border: "1px solid #d1d5db",
+            background: "#fff",
+            color: "#374151",
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: 600,
+            cursor: isLocked ? "not-allowed" : "pointer",
+            opacity: isLocked ? 0.6 : 1,
+            appearance: "none",
+            WebkitAppearance: "none",
+            MozAppearance: "none",
+          }}
+        >
+          {Object.entries(LOAD_CONFIG).map(([mode, config]) => (
+            <option key={mode} value={mode}>
+              {config.label} ({config.shortLabel})
+            </option>
+          ))}
+        </select>
+        <span
+          style={{
+            position: "absolute",
+            top: "50%",
+            right: 14,
+            transform: "translateY(-50%)",
+            pointerEvents: "none",
+            color: "#6b7280",
+            fontSize: 12,
+          }}
+        >
+          ▼
+        </span>
       </div>
       <div
         style={{
