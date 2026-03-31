@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase";
+const BAD_WORDS = ["fuck", "bitch", "ass", "shit", "badass"];
 
+function censorComment(text) {
+  return text.replace(/\S+/g, (word) => {
+    const lower = word.toLowerCase();
+    const matched = BAD_WORDS.find((bad) => lower.includes(bad));
+    if (!matched) return word;
+    const idx = lower.indexOf(matched);
+    return word.slice(0, idx) + "*".repeat(matched.length) + word.slice(idx + matched.length);
+  });
+}
 function getDifficultyLabel(d) {
   if (d < 1.5) return "Very Easy";
   if (d < 2.5) return "Easy";
@@ -89,7 +99,20 @@ export default function CourseRating() {
       setWouldRecommend(existing.would_recommend);
     }
   }
-
+async function handleDeleteReview() {
+  if (!userReview) return;
+  const { error } = await supabase.from("course_reviews").delete().eq("id", userReview.id);
+  if (error) {
+    setMessage({ text: "Failed to delete review.", type: "error" });
+  } else {
+    setUserReview(null);
+    setComment("");
+    setDifficulty(0);
+    setWouldRecommend(null);
+    setMessage(null);
+    await fetchReviews(userId);
+  }
+}
   async function handleSubmit() {
     if (difficulty === 0 && wouldRecommend === null && !comment.trim()) {
   setMessage({ text: "Please fill at least one review field.", type: "error" });
@@ -102,7 +125,7 @@ export default function CourseRating() {
       
         const updates = {};
 
-        if (comment.trim()) updates.comment = comment.trim();
+if (comment.trim()) updates.comment = censorComment(comment.trim());
         if (difficulty !== 0) updates.difficulty = difficulty;
         if (wouldRecommend !== null) updates.would_recommend = wouldRecommend;
 
@@ -124,7 +147,7 @@ export default function CourseRating() {
         course_id: courseId,
       };
 
-      if (comment.trim()) newReview.comment = comment.trim();
+if (comment.trim()) newReview.comment = censorComment(comment.trim());
       if (difficulty !== 0) newReview.difficulty = difficulty;
       if (wouldRecommend !== null) newReview.would_recommend = wouldRecommend;
 
@@ -309,23 +332,30 @@ export default function CourseRating() {
             </div>
           )}
 
-          <div style={{ marginTop: 10, marginBottom: 20 }}>
+         <div style={{ marginTop: 10, marginBottom: 20 }}>
   <button
     onClick={handleSubmit}
     disabled={submitting}
     style={{
-      padding: "10px 20px",
-      borderRadius: 8,
-      border: "none",
-      background: "#111",
-      color: "#fff",
-      cursor: "pointer",
-      fontSize: 14,
-      opacity: submitting ? 0.7 : 1,
+      padding: "10px 20px", borderRadius: 8, border: "none",
+      background: "#111", color: "#fff", cursor: "pointer",
+      fontSize: 14, opacity: submitting ? 0.7 : 1,
     }}
   >
     {submitting ? "Submitting..." : userReview ? "Update Review" : "Submit Review"}
   </button>
+  {userReview && (
+    <button
+      onClick={handleDeleteReview}
+      style={{
+        marginLeft: 10, padding: "10px 20px", borderRadius: 8,
+        border: "1px solid #fecaca", background: "#fef2f2",
+        color: "#dc2626", cursor: "pointer", fontSize: 14,
+      }}
+    >
+      Delete Review
+    </button>
+  )}
 </div>
 
 
