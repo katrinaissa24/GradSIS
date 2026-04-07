@@ -5,6 +5,11 @@ html {
   scroll-behavior: smooth;
 }
 
+html.mobile-dnd-active-scroll,
+html.mobile-dnd-active-scroll body {
+  scroll-behavior: auto !important;
+}
+
 body.mobile-dnd-active,
 body.mobile-dnd-active * {
   -webkit-user-select: none;

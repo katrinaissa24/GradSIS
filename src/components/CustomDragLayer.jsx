@@ -2,6 +2,58 @@ import { useEffect, useRef } from "react";
 import { useDragLayer } from "react-dnd";
 import CourseCard from "./CourseCard";
 
+function isScrollable(element) {
+  if (!element) return false;
+  const style = window.getComputedStyle(element);
+  const overflowY = style.overflowY;
+  return (
+    (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+    element.scrollHeight > element.clientHeight
+  );
+}
+
+function findScrollContainer(x, y) {
+  const target = document.elementFromPoint(x, y);
+  let current = target;
+
+  while (current && current !== document.body) {
+    if (isScrollable(current)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return document.scrollingElement || document.documentElement;
+}
+
+function scrollContainer(container, speed) {
+  if (!container || speed === 0) return;
+
+  if (
+    container === document.body ||
+    container === document.documentElement ||
+    container === document.scrollingElement
+  ) {
+    window.scrollBy(0, speed);
+    return;
+  }
+
+  container.scrollTop += speed;
+}
+
+function getContainerViewport(container) {
+  if (
+    container === document.body ||
+    container === document.documentElement ||
+    container === document.scrollingElement
+  ) {
+    return { top: 0, bottom: window.innerHeight };
+  }
+
+  const rect = container.getBoundingClientRect();
+  return { top: rect.top, bottom: rect.bottom };
+}
+
 function buildPreviewStyle(currentOffset, item, isMobile) {
   return {
     position: "fixed",
@@ -51,6 +103,12 @@ function MinimalCoursePreview({ code, number, name, credits }) {
 
 export default function CustomDragLayer({ isMobile = false }) {
   const lastOffset = useRef(null);
+  const dragOffsetRef = useRef(null);
+  const frameRef = useRef(null);
+  const scrollStateRef = useRef({
+    direction: 0,
+    since: 0,
+  });
 
   const { itemType, isDragging, item, currentOffset, initialOffset } = useDragLayer(
     (monitor) => ({
@@ -65,19 +123,88 @@ export default function CustomDragLayer({ isMobile = false }) {
   if (!lastOffset.current && initialOffset) lastOffset.current = initialOffset;
   if (currentOffset) lastOffset.current = currentOffset;
   const displayOffset = currentOffset ?? lastOffset.current;
+  dragOffsetRef.current = displayOffset;
 
   useEffect(() => {
     if (!isMobile || typeof document === "undefined") return undefined;
 
     document.body.classList.toggle("mobile-dnd-active", isDragging);
+    document.documentElement.classList.toggle("mobile-dnd-active-scroll", isDragging);
 
     return () => {
       document.body.classList.remove("mobile-dnd-active");
+      document.documentElement.classList.remove("mobile-dnd-active-scroll");
+    };
+  }, [isDragging, isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || !isDragging || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const EDGE_SIZE = 150;
+    const BASE_MAX_SPEED = 5;
+    const BOOST_MAX_SPEED = 8;
+
+    const tick = () => {
+      const offset = dragOffsetRef.current;
+      if (!offset) {
+        frameRef.current = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      const container = findScrollContainer(offset.x, offset.y);
+      const { top, bottom } = getContainerViewport(container);
+      let speed = 0;
+      let direction = 0;
+      const now = performance.now();
+
+      if (offset.y < top + EDGE_SIZE) {
+        direction = -1;
+        speed = -BASE_MAX_SPEED * (1 - (offset.y - top) / EDGE_SIZE);
+      } else if (offset.y > bottom - EDGE_SIZE) {
+        direction = 1;
+        speed =
+          BASE_MAX_SPEED * ((offset.y - (bottom - EDGE_SIZE)) / EDGE_SIZE);
+      }
+
+      if (direction !== 0) {
+        if (scrollStateRef.current.direction !== direction) {
+          scrollStateRef.current.direction = direction;
+          scrollStateRef.current.since = now;
+        }
+
+        const holdMs = now - scrollStateRef.current.since;
+        const boostProgress = Math.min(1, holdMs / 1400);
+        const boostSpeed = BOOST_MAX_SPEED * boostProgress;
+        speed += direction * boostSpeed;
+      } else {
+        scrollStateRef.current.direction = 0;
+        scrollStateRef.current.since = 0;
+      }
+
+      scrollContainer(container, speed);
+
+      frameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    frameRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (frameRef.current) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      scrollStateRef.current.direction = 0;
+      scrollStateRef.current.since = 0;
     };
   }, [isDragging, isMobile]);
 
   if (!isDragging || !displayOffset || !item) {
     lastOffset.current = null;
+    dragOffsetRef.current = null;
+    scrollStateRef.current.direction = 0;
+    scrollStateRef.current.since = 0;
     return null;
   }
 

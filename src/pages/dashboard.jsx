@@ -307,46 +307,6 @@ export default function Dashboard() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-useEffect(() => {
-  const EDGE_SIZE = 120;
-  const MAX_SPEED = 30;
-  let animFrame = null;
-  let currentY = null;
-
-  function onTouchMove(e) {
-    if (e.touches.length > 0) {
-      currentY = e.touches[0].clientY;
-    }
-  }
-
-  function onTouchEnd() {
-    currentY = null;
-  }
-
-  function scroll() {
-    if (currentY != null) {
-      const { innerHeight } = window;
-      let speed = 0;
-      if (currentY < EDGE_SIZE) {
-        speed = -MAX_SPEED * (1 - currentY / EDGE_SIZE);
-      } else if (currentY > innerHeight - EDGE_SIZE) {
-        speed = MAX_SPEED * ((currentY - (innerHeight - EDGE_SIZE)) / EDGE_SIZE);
-      }
-      if (speed !== 0) window.scrollBy(0, speed);
-    }
-    animFrame = requestAnimationFrame(scroll);
-  }
-
-  document.addEventListener("touchmove", onTouchMove, { passive: true });
-  document.addEventListener("touchend", onTouchEnd);
-  animFrame = requestAnimationFrame(scroll);
-
-  return () => {
-    document.removeEventListener("touchmove", onTouchMove);
-    document.removeEventListener("touchend", onTouchEnd);
-    if (animFrame) cancelAnimationFrame(animFrame);
-  };
-}, []);
   useEffect(() => {
     if (!semesters.length) {
       setMobileQuickAddSemesterId("");
