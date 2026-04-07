@@ -4,3 +4,10 @@
 html {
   scroll-behavior: smooth;
 }
+
+body.mobile-dnd-active,
+body.mobile-dnd-active * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

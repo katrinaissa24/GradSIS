@@ -896,7 +896,7 @@ const DND_OPTIONS = {
 
   return (
     <DndProvider backend={MultiBackend} options={DND_OPTIONS}>
-      <CustomDragLayer />
+      <CustomDragLayer isMobile={isMobile} />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
         <div
