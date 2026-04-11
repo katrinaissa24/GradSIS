@@ -1,13 +1,20 @@
 import { gradePoints } from "../constants/grades";
 
+export function getCourseCredits(c) {
+  if (c?.credits != null && c.credits !== "") return Number(c.credits) || 0;
+  if (c?.courses?.credits != null) return Number(c.courses.credits) || 0;
+  return 0;
+}
+
 export function calculateSemesterGPA(courses) {
   let totalPoints = 0;
   let totalCredits = 0;
 
   courses.forEach((c) => {
     if (c.grade && Object.prototype.hasOwnProperty.call(gradePoints, c.grade)) {
-      totalPoints += gradePoints[c.grade] * (c?.courses?.credits ?? 0);
-      totalCredits += c?.courses?.credits ?? 0;
+      const credits = getCourseCredits(c);
+      totalPoints += gradePoints[c.grade] * credits;
+      totalCredits += credits;
     }
   });
 
@@ -16,7 +23,7 @@ export function calculateSemesterGPA(courses) {
 }
 
 export function calculateCredits(courses) {
-  return courses.reduce((sum, c) => sum + (c?.courses?.credits ?? 0), 0);
+  return courses.reduce((sum, c) => sum + getCourseCredits(c), 0);
 }
 
 export function calculateCumulativeGPAWithRepeats(allCourses, semesters) {
@@ -27,13 +34,19 @@ export function calculateCumulativeGPAWithRepeats(allCourses, semesters) {
 
   latestGradedAttempts.forEach((c) => {
     if (c.grade && Object.prototype.hasOwnProperty.call(gradePoints, c.grade)) {
-      totalPoints += gradePoints[c.grade] * c.courses.credits;
-      totalCredits += c.courses.credits;
+      const credits = getCourseCredits(c);
+      totalPoints += gradePoints[c.grade] * credits;
+      totalCredits += credits;
     }
   });
 
   if (!totalCredits) return "0.00";
   return (totalPoints / totalCredits).toFixed(2);
+}
+
+export function calculateGPACreditHours(allCourses, semesters) {
+  const latestGradedAttempts = getLatestGradedAttempts(allCourses, semesters);
+  return latestGradedAttempts.reduce((sum, c) => sum + getCourseCredits(c), 0);
 }
 
 function getLatestGradedAttempts(allCourses, semesters) {
