@@ -24,14 +24,14 @@ export function Navigation() {
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
-              className="text-gray-700 hover:text-gray-900"
+              className="text-gray-700 hover:text-gray-900 cursor-pointer"
               onClick={() => navigate("/auth")}
             >
               Sign In
             </Button>
 
             <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full cursor-pointer"
               onClick={() => navigate("/auth")}
             >
               Generate My Plan

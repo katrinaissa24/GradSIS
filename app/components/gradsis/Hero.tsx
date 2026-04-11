@@ -24,14 +24,14 @@ export function Hero() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Button
               size="lg"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 text-lg h-14"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 text-lg h-14 cursor-pointer"
               onClick={() => navigate("/auth")}
             >
               Generate My Plan
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
 
-            <Button
+            {/* <Button
               size="lg"
               variant="outline"
               className="rounded-full px-8 text-lg h-14 border-2"
@@ -39,7 +39,7 @@ export function Hero() {
             >
               <Play className="mr-2 h-5 w-5" />
               See Demo
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>

@@ -24,7 +24,7 @@ export default function LandingPage() {
         <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
           <a
             href="/auth"
-            style={{ background: "#111", color: "#fff", padding: "12px 16px", borderRadius: 10, textDecoration: "none" }}
+            style={{ background: "#111", color: "#fff", padding: "12px 16px", borderRadius: 10, textDecoration: "none" , cursor: "pointer"}}
           >
             Sign up
           </a>

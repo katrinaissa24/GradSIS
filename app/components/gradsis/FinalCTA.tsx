@@ -34,7 +34,7 @@ export function FinalCTA() {
               placeholder="Enter your AUB email"
               className="h-14 rounded-full px-6 text-lg bg-white/95 backdrop-blur-sm border-2 border-white/50 focus:border-white placeholder:text-gray-400"
             />
-            <Button size="lg" className="bg-white text-emerald-600 hover:bg-gray-100 rounded-full px-8 text-lg h-14 shadow-xl whitespace-nowrap">
+            <Button size="lg" className="bg-white text-emerald-600 hover:bg-gray-100 rounded-full px-8 text-lg h-14 shadow-xl whitespace-nowrap cursor-pointer" onClick={() => window.location.href = "/auth"}>
               Generate My Plan
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
