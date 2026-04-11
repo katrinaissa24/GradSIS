@@ -13,6 +13,11 @@ import {
 } from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
+import {
+  computeSemesterDifficulties,
+  exportPlanAsPDF,
+  exportPlanAsExcel,
+} from "../utils/exportPlan";
 
 const MOBILE_BREAKPOINT = 768;
 const LOAD_CONFIG = {
@@ -40,6 +45,13 @@ export default function Dashboard() {
       ? window.innerWidth <= MOBILE_BREAKPOINT
       : false,
   );
+  const [userProfile, setUserProfile] = useState({
+    name: "",
+    email: "",
+    major: "",
+  });
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -143,7 +155,9 @@ export default function Dashboard() {
 
     return Object.entries(ELECTIVE_REQUIREMENTS).map(([bucket, required]) => {
       const value = earned[bucket] || 0;
-      const isComplete = value >= required;
+      const isExact = value === required;
+      const isOver = value > required;
+      const isUnder = value < required;
 
       return {
         bucket,
@@ -151,7 +165,11 @@ export default function Dashboard() {
         required,
         remaining: Math.max(0, required - value),
         pct: required ? Math.min(100, Math.round((value / required) * 100)) : 0,
-        isComplete,
+        isExact,
+        isOver,
+        isUnder,
+        // isComplete now means "exactly meets the requirement" (used for export gating)
+        isComplete: isExact,
       };
     });
   }
@@ -168,6 +186,37 @@ export default function Dashboard() {
       const user = sessionData.session.user;
       setAuthUser(user);
       const userId = user.id;
+
+      try {
+        const { data: userRow } = await supabase
+          .from("users")
+          .select("name, email, major_id")
+          .eq("id", userId)
+          .single();
+
+        let majorName = "";
+        if (userRow?.major_id) {
+          const { data: majorRow } = await supabase
+            .from("majors")
+            .select("name")
+            .eq("id", userRow.major_id)
+            .single();
+          majorName = majorRow?.name || "";
+        }
+
+        setUserProfile({
+          name: userRow?.name || user.user_metadata?.name || "",
+          email: userRow?.email || user.email || "",
+          major: majorName,
+        });
+      } catch (profileErr) {
+        console.error("Failed to load user profile for export:", profileErr);
+        setUserProfile({
+          name: user.user_metadata?.name || "",
+          email: user.email || "",
+          major: "",
+        });
+      }
 
       const { data: fetchedPlans, error: plansError } = await supabase
         .from("plans")
@@ -724,6 +773,60 @@ export default function Dashboard() {
     }
   }
 
+  async function handleExport(format) {
+    setExportMenuOpen(false);
+
+    const incompleteRows = electiveRows.filter((row) => !row.isExact);
+    if (incompleteRows.length > 0) {
+      const details = incompleteRows
+        .map((row) => `• ${row.bucket}: ${row.earned}/${row.required}`)
+        .join("\n");
+      alert(
+        `Cannot export your graduation plan.\n\n` +
+          `All elective requirements must be met exactly (no more, no less). ` +
+          `Please fix the following before exporting:\n\n${details}`,
+      );
+      return;
+    }
+
+    if (!semesters.length) {
+      alert("There are no semesters to export yet.");
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const semesterDifficulties = await computeSemesterDifficulties(semesters);
+      const activePlan = plans.find((p) => p.id === selectedPlanId);
+      const profile = {
+        name: userProfile.name || authUser?.email || "",
+        email: userProfile.email || authUser?.email || "",
+        major: userProfile.major || "",
+        gpa: totalGPA,
+        creditsCompleted: completed,
+        totalCredits: total,
+      };
+
+      const args = {
+        planTitle: activePlan?.name || "Graduation Plan",
+        profile,
+        semesters,
+        semesterDifficulties,
+      };
+
+      if (format === "pdf") {
+        exportPlanAsPDF(args);
+      } else {
+        exportPlanAsExcel(args);
+      }
+    } catch (err) {
+      console.error("Failed to export plan:", err);
+      alert("Failed to export plan. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleMobileQuickAddCourse(courseId) {
     const course = prerequisiteCourses.find((entry) => entry.id === courseId);
     if (!course) return;
@@ -803,48 +906,51 @@ const DND_OPTIONS = {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {electiveRows.map((row) => (
-              <div
-                key={row.bucket}
-                style={{
-                border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
-                borderRadius: 10,
-                padding: 10,
-                background: row.isComplete ? "#f0fdf4" : "#fff",
-              }}
-              >
+            {electiveRows.map((row) => {
+              const ok = row.isExact;
+              return (
                 <div
+                  key={row.bucket}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: 12,
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>{row.bucket}</span>
-                  <span>
-                    {row.earned}/{row.required}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: 6,
-                    background: "#eee",
-                    borderRadius: 999,
-                    marginTop: 6,
+                    border: ok ? "1px solid #86efac" : "1px solid #fecaca",
+                    borderRadius: 10,
+                    padding: 10,
+                    background: ok ? "#f0fdf4" : "#fef2f2",
                   }}
                 >
                   <div
                     style={{
-                    height: 6,
-                    width: `${row.pct}%`,
-                    background: row.isComplete ? "#16a34a" : "#111",
-                    borderRadius: 999,
-                  }}
-                  />
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 12,
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{row.bucket}</span>
+                    <span style={{ color: ok ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                      {row.earned}/{row.required}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: 6,
+                      background: "#eee",
+                      borderRadius: 999,
+                      marginTop: 6,
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: 6,
+                        width: `${row.pct}%`,
+                        background: ok ? "#16a34a" : "#dc2626",
+                        borderRadius: 999,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1027,6 +1133,95 @@ const DND_OPTIONS = {
                 </option>
               ))}
             </select>
+
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setExportMenuOpen((prev) => !prev)}
+                disabled={exporting}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #111",
+                  background: "#111",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  minHeight: 44,
+                  cursor: exporting ? "wait" : "pointer",
+                  opacity: exporting ? 0.7 : 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {exporting ? "Exporting..." : "Export"}
+                <span style={{ fontSize: 10 }}>▼</span>
+              </button>
+
+              {exportMenuOpen && (
+                <>
+                  <div
+                    onClick={() => setExportMenuOpen(false)}
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      zIndex: 199,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      left: 0,
+                      background: "#fff",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                      zIndex: 200,
+                      minWidth: 170,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleExport("pdf")}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "12px 14px",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 14,
+                        color: "#111",
+                      }}
+                    >
+                      Export as PDF
+                    </button>
+                    <div style={{ height: 1, background: "#f1f5f9" }} />
+                    <button
+                      type="button"
+                      onClick={() => handleExport("excel")}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "12px 14px",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 14,
+                        color: "#111",
+                      }}
+                    >
+                      Export as Excel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
 
             {isMobile && (
               <>
@@ -1249,47 +1444,50 @@ const DND_OPTIONS = {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
-                  {electiveRows.map((row) => (
-                    <div
-                      key={row.bucket}
-                      style={{
-                      border: row.isComplete ? "1px solid #86efac" : "1px solid #f0f0f0",
-                      borderRadius: 10,
-                      padding: 10,
-                      background: row.isComplete ? "#f0fdf4" : "#fff",
-                    }}
-                    >
+                  {electiveRows.map((row) => {
+                    const ok = row.isExact;
+                    return (
                       <div
+                        key={row.bucket}
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          fontSize: 12,
+                          border: ok ? "1px solid #86efac" : "1px solid #fecaca",
+                          borderRadius: 10,
+                          padding: 10,
+                          background: ok ? "#f0fdf4" : "#fef2f2",
                         }}
                       >
-                        <span style={{ fontWeight: 600 }}>{row.bucket}</span>
-                        <span>
-                          {row.earned}/{row.required}
-                        </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{row.bucket}</span>
+                          <span style={{ color: ok ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                            {row.earned}/{row.required}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            height: 6,
+                            background: "#eee",
+                            borderRadius: 999,
+                            marginTop: 6,
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: 6,
+                              width: `${row.pct}%`,
+                              background: ok ? "#16a34a" : "#dc2626",
+                              borderRadius: 999,
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div
-                      style={{
-                        height: 6,
-                        background: "#eee",
-                        borderRadius: 999,
-                        marginTop: 6,
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: 6,
-                          width: `${row.pct}%`,
-                          background: row.isComplete ? "#16a34a" : "#111",
-                          borderRadius: 999,
-                        }}
-                      />
-                    </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
