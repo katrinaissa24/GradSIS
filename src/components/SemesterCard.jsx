@@ -17,12 +17,13 @@ export default function SemesterCard({
   deleteCourse,
   onSidebarDrop,
   isMobile = false,
+  isAddCourseOpen = false,
+  onToggleAddCourse,
 }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
   const compactHeight = isMobile ? 38 : 44;
   const compactPadding = isMobile ? "8px 10px" : "10px 12px";
-  const [showAddCourses, setShowAddCourses] = useState(false);
   const [isEditingSemesterName, setIsEditingSemesterName] = useState(false);
   const [editedSemesterName, setEditedSemesterName] = useState(
     semester.name || "",
@@ -38,10 +39,10 @@ export default function SemesterCard({
   const canShowLockButton = semester.status === "previous";
 
   useEffect(() => {
-  if (isLocked && showAddCourses) {
-      setShowAddCourses(false);
+    if (isLocked && isAddCourseOpen) {
+      onToggleAddCourse?.(semester.id, false);
     }
-  }, [isLocked, showAddCourses]);
+  }, [isLocked, isAddCourseOpen, onToggleAddCourse, semester.id]);
 
   const LOAD_CONFIG = {
     underload: {
@@ -617,7 +618,7 @@ export default function SemesterCard({
   <button
     type="button"
     onClick={() => {
-      setShowAddCourses((prev) => !prev);
+      onToggleAddCourse?.(semester.id, !isAddCourseOpen);
     }}
     style={{
       marginTop: 8,
@@ -633,11 +634,11 @@ export default function SemesterCard({
       alignSelf: "flex-start",
     }}
   >
-    {showAddCourses ? "Close" : "+ Add Course"}
+    {isAddCourseOpen ? "Close" : "+ Add Course"}
   </button>
 )}
 
-      {showAddCourses && (
+      {isAddCourseOpen && (
         <div style={{ marginTop: 16 }}>
           <Prerequisite
             key={refreshKey}

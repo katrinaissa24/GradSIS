@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
   const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
+  const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined"
@@ -57,6 +58,16 @@ export default function Dashboard() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
+  }
+
+  function handleToggleAddCourse(semesterId, shouldOpen) {
+    setOpenAddCourseSemesterId((currentId) => {
+      if (!shouldOpen) {
+        return currentId === semesterId ? null : currentId;
+      }
+
+      return semesterId;
+    });
   }
 
   const PASSING_GRADES = new Set([
@@ -1356,6 +1367,8 @@ const DND_OPTIONS = {
               deleteCourse={deleteCourse}
               onSidebarDrop={handleSidebarDrop}
               isMobile={isMobile}
+              isAddCourseOpen={openAddCourseSemesterId === sem.id}
+              onToggleAddCourse={handleToggleAddCourse}
             />
             ))}
 
