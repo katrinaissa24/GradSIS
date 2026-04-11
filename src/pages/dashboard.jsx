@@ -814,6 +814,10 @@ export default function Dashboard() {
     }
   }, [authUser?.id, initialize, updateSemesterById]);
 
+  const updateSemesterName = useCallback((id, name) => {
+    updateSemesterById(id, (sem) => ({ ...sem, name }));
+  }, [updateSemesterById]);
+
   async function updateSemesterStudentStatus(id, newStudentStatus) {
     const normalized = newStudentStatus || null;
 
@@ -1784,6 +1788,7 @@ export default function Dashboard() {
               semester={sem}
               userId={authUser?.id}
               refresh={initialize}
+              updateSemesterName={updateSemesterName}
               updateStatus={updateSemesterStatus}
               updateLoadMode={updateSemesterLoadMode}
               updateLock={updateSemesterLock}

@@ -4,7 +4,7 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
-import { memo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 const STUDENT_STATUS_OPTIONS = [
@@ -16,12 +16,13 @@ const STUDENT_STATUS_OPTIONS = [
 
 const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
 
-function SemesterCard({
+export default function SemesterCard({
   semester,
   updateStatus,
   updateLoadMode,
   updateLock,
   updateStudentStatus,
+  updateSemesterName,
   updateCourse,
   moveCourse,
   userId,
@@ -344,8 +345,11 @@ function SemesterCard({
 
       if (error) throw error;
 
+      // Optimistically update the name in local state — avoids a full refresh()
+      // which would reset any unsaved semester fields (e.g. student_status if
+      // the DB column hasn't been migrated yet).
+      updateSemesterName?.(semester.id, trimmedName);
       setIsEditingSemesterName(false);
-      await refresh();
     } catch (err) {
       console.error("Error renaming semester:", err);
     } finally {
@@ -759,12 +763,3 @@ function SemesterCard({
   );
 }
 
-export default memo(
-  SemesterCard,
-  (prevProps, nextProps) =>
-    prevProps.semester === nextProps.semester &&
-    prevProps.isMobile === nextProps.isMobile &&
-    prevProps.isAddCourseOpen === nextProps.isAddCourseOpen &&
-    prevProps.reviewStatsByCourseId === nextProps.reviewStatsByCourseId &&
-    prevProps.userId === nextProps.userId,
-);
