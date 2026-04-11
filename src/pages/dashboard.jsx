@@ -1304,7 +1304,14 @@ export default function Dashboard() {
     );
   }, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
 
-  const allCourses = semesters.flatMap((s) => s.user_courses || []);
+  const allCourses = useMemo(
+    () => semesters.flatMap((semester) => semester.user_courses || []),
+    [semesters],
+  );
+  const enrolledCourseIds = useMemo(
+    () => new Set(allCourses.map((course) => course.course_id).filter(Boolean)),
+    [allCourses],
+  );
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   // GPA quality hours: only the latest graded attempts that contribute to GPA
   const totalHours = calculateGPACreditHours(allCourses, semesters);
