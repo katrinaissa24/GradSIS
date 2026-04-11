@@ -81,7 +81,7 @@ export default function Dashboard() {
     "Cultures & Histories": "Cultures and Histories",
     "Societies & Individuals": "Societies and Individuals",
     "Understanding the World": "Understanding the World",
-    "Technical Elective": "Technical Elective",
+    "Technical Elective": "Technical Elective",   
     CEL: "Community Engaged Learning",
   };
 
@@ -574,7 +574,10 @@ export default function Dashboard() {
       "Societies and Individuals": "Societies & Individuals",
       "Human Values": "Human Values",
       "Understanding the World": "Understanding the World",
-      "Technical Elective": "Elective",
+      "Technical Elective": "Technical Elective",
+      "English Communication": "Engl. Communication",
+      "Arabic Communication": "Arab. Communication",
+
     };
 
     const attributeToUse =
