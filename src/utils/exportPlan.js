@@ -1,4 +1,8 @@
-import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
+import {
+  calculateSemesterGPA,
+  calculateCredits,
+  getCourseCredits,
+} from "../constants/gpa";
 import { supabase } from "../services/supabase";
 
 const STATUS_COLORS = {
@@ -85,7 +89,7 @@ export async function computeSemesterDifficulties(semesters) {
         break;
       }
       const avg = reviews.reduce((a, b) => a + b, 0) / reviews.length;
-      const credits = course.courses?.credits || 3;
+      const credits = getCourseCredits(course) || 3;
       totalWeightedDifficulty += avg * credits;
       totalCredits += credits;
     }
@@ -120,6 +124,7 @@ function buildSemesterTableHtml(sem, difficultyLabelText) {
           <td style="padding:6px 8px; border:1px solid #ddd;">${escapeHtml(formatCourseCode(c))}</td>
           <td style="padding:6px 8px; border:1px solid #ddd;">${escapeHtml(c.courses?.name ?? "Elective Slot")}</td>
           <td style="padding:6px 8px; border:1px solid #ddd;">${escapeHtml(c.attribute ?? "")}</td>
+          <td style="padding:6px 8px; border:1px solid #ddd; text-align:center;">${escapeHtml(getCourseCredits(c))}</td>
           <td style="padding:6px 8px; border:1px solid #ddd; text-align:center;">${escapeHtml(c.grade ?? "")}</td>
         </tr>`,
     )
@@ -136,7 +141,7 @@ function buildSemesterTableHtml(sem, difficultyLabelText) {
 
   const detailsRow = `
     <tr style="background:${headerColor}; color:#ffffff; font-weight:600;">
-      <td colspan="4" style="padding:8px 10px; border:1px solid #ddd;">
+      <td colspan="5" style="padding:8px 10px; border:1px solid #ddd;">
         ${detailParts.map(escapeHtml).join("&nbsp;&nbsp;|&nbsp;&nbsp;")}
       </td>
     </tr>`;
@@ -145,20 +150,21 @@ function buildSemesterTableHtml(sem, difficultyLabelText) {
     <table style="border-collapse:collapse; width:100%; margin:0 0 22px; font-family:Arial,Helvetica,sans-serif; font-size:12px;">
       <thead>
         <tr>
-          <th colspan="4" style="background:${headerColor}; color:#ffffff; padding:10px 12px; text-align:left; font-size:14px; border:1px solid #ddd;">
+          <th colspan="5" style="background:${headerColor}; color:#ffffff; padding:10px 12px; text-align:left; font-size:14px; border:1px solid #ddd;">
             ${escapeHtml(sem.name || "Semester")} &nbsp;&middot;&nbsp; ${escapeHtml(capitalize(status))}
           </th>
         </tr>
         <tr style="background:${headerColor}; color:#ffffff;">
-          <th style="padding:8px 10px; border:1px solid #ddd; text-align:left; width:18%;">Code</th>
+          <th style="padding:8px 10px; border:1px solid #ddd; text-align:left; width:16%;">Code</th>
           <th style="padding:8px 10px; border:1px solid #ddd; text-align:left;">Course Name</th>
           <th style="padding:8px 10px; border:1px solid #ddd; text-align:left; width:22%;">Attribute</th>
-          <th style="padding:8px 10px; border:1px solid #ddd; text-align:center; width:10%;">Grade</th>
+          <th style="padding:8px 10px; border:1px solid #ddd; text-align:center; width:9%;">Credits</th>
+          <th style="padding:8px 10px; border:1px solid #ddd; text-align:center; width:9%;">Grade</th>
         </tr>
       </thead>
       <tbody>
         ${rows ||
-          `<tr><td colspan="4" style="padding:10px; border:1px solid #ddd; color:#888; text-align:center;">No courses</td></tr>`}
+          `<tr><td colspan="5" style="padding:10px; border:1px solid #ddd; color:#888; text-align:center;">No courses</td></tr>`}
         ${detailsRow}
       </tbody>
     </table>`;
