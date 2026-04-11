@@ -75,7 +75,15 @@ export default function SemesterCard({
     async function calculateDifficulty() {
       if (!semester.user_courses.length) return;
 
-      const courseIds = semester.user_courses.map(c => c.course_id);
+      const courseIds = semester.user_courses
+        .map((c) => c.course_id)
+        .filter(Boolean);
+
+      if (!courseIds.length) {
+        setSemesterDifficulty(null);
+        setMissingRatings(true);
+        return;
+      }
 
       const { data } = await supabase
         .from("course_reviews")
@@ -495,8 +503,8 @@ export default function SemesterCard({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 10,
-                flex: "1 1 320px",
+                gap: 12,
+                width: "100%",
                 minWidth: 0,
               }}
             >
@@ -505,51 +513,79 @@ export default function SemesterCard({
                   display: "flex",
                   alignItems: "flex-start",
                   justifyContent: "space-between",
-                  gap: 8,
+                  gap: 12,
                   width: "100%",
-                  flexWrap: "wrap",
                 }}
               >
-                <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-                  {semester.name}
-                </h3>
-                {isMobile && actionButtons}
-              </div>
-              {statusButtons}
-
-              {canShowLockButton && (
-                <button
-                  type="button"
-                  onClick={() => updateLock?.(semester.id, !isLocked)}
+                <h3
                   style={{
-                    padding: isMobile ? "6px 10px" : "7px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${isLocked ? "#2563eb" : "#111"}`,
-                    background: isLocked ? "#2563eb" : "#fff",
-                    color: isLocked ? "#fff" : "#111",
-                    cursor: "pointer",
-                    fontSize: isMobile ? 12 : 13,
-                    minHeight: isMobile ? 34 : 36,
-                    width: "fit-content",
+                    fontSize: 18,
+                    fontWeight: 600,
+                    margin: 0,
+                    minWidth: 0,
+                    flex: "1 1 auto",
                   }}
                 >
-                  {isLocked ? "Unlock" : "Lock"}
-                </button>
-              )}
-            </div>
+                  {semester.name}
+                </h3>
+                <div style={{ flexShrink: 0 }}>{actionButtons}</div>
+              </div>
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                width: isMobile ? "100%" : "auto",
-                alignItems: isMobile ? "stretch" : "flex-end",
-                flex: isMobile ? "1 1 100%" : "0 0 auto",
-              }}
-            >
-              {!isMobile && actionButtons}
-              {loadSelector}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 16,
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                  width: "100%",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    flex: "1 1 320px",
+                    minWidth: 0,
+                  }}
+                >
+                  {statusButtons}
+
+                  {canShowLockButton && (
+                    <button
+                      type="button"
+                      onClick={() => updateLock?.(semester.id, !isLocked)}
+                      style={{
+                        padding: isMobile ? "6px 10px" : "7px 12px",
+                        borderRadius: 8,
+                        border: `1px solid ${isLocked ? "#2563eb" : "#111"}`,
+                        background: isLocked ? "#2563eb" : "#fff",
+                        color: isLocked ? "#fff" : "#111",
+                        cursor: "pointer",
+                        fontSize: isMobile ? 12 : 13,
+                        minHeight: isMobile ? 34 : 36,
+                        width: "fit-content",
+                      }}
+                    >
+                      {isLocked ? "Unlock" : "Lock"}
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    width: isMobile ? "100%" : "auto",
+                    alignItems: isMobile ? "stretch" : "flex-end",
+                    flex: isMobile ? "1 1 100%" : "0 0 auto",
+                  }}
+                >
+                  {loadSelector}
+                </div>
+              </div>
             </div>
           </>
         )}

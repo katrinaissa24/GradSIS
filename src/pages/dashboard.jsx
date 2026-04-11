@@ -20,6 +20,7 @@ import {
 } from "../utils/exportPlan";
 
 const MOBILE_BREAKPOINT = 768;
+const TABLET_BREAKPOINT = 1100;
 const LOAD_CONFIG = {
   underload: { targetCredits: 11 },
   normal: { targetCredits: 17 },
@@ -41,6 +42,11 @@ export default function Dashboard() {
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
+  const [isTabletLayout, setIsTabletLayout] = useState(() =>
+    typeof window !== "undefined"
+      ? window.innerWidth <= TABLET_BREAKPOINT
+      : false,
+  );
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= MOBILE_BREAKPOINT
@@ -361,6 +367,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+      setIsTabletLayout(window.innerWidth <= TABLET_BREAKPOINT);
     };
 
     handleResize();
@@ -1265,10 +1272,15 @@ const DND_OPTIONS = {
         <div
           style={{
             display: "flex",
-            flexDirection: isMobile ? "column" : "row",
-            gap: isMobile ? 16 : 24,
+            flexDirection: isMobile || isTabletLayout ? "column" : "row",
+            gap: isMobile ? 16 : isTabletLayout ? 20 : 24,
             alignItems: "flex-start",
-            padding: isMobile ? "0 16px 24px" : "0 24px 24px",
+            padding:
+              isMobile
+                ? "0 16px 24px"
+                : isTabletLayout
+                  ? "0 20px 24px"
+                  : "0 24px 24px",
           }}
         >
           {drawerOpen && (
@@ -1427,10 +1439,10 @@ const DND_OPTIONS = {
           {!isMobile && (
             <div
               style={{
-                width: 320,
+                width: isTabletLayout ? "100%" : 320,
                 flexShrink: 0,
-                position: "sticky",
-                top: 110,
+                position: isTabletLayout ? "static" : "sticky",
+                top: isTabletLayout ? "auto" : 110,
               }}
             >
               <div

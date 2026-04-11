@@ -44,6 +44,7 @@ export default function PrerequisiteSidebar({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
+  const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
 
   const completedCourseIds = useMemo(() => {
     const ids = new Set();
@@ -93,6 +94,85 @@ export default function PrerequisiteSidebar({
   const availableCount = courses.filter(
     (c) => !enrolledCourseIds.has(c.id) && !completedCourseIds.has(c.id),
   ).length;
+
+  useEffect(() => {
+    async function loadReviewStats() {
+      if (!courses.length) {
+        setReviewStatsByCourseId({});
+        return;
+      }
+
+      const courseIds = courses.map((course) => course.id).filter(Boolean);
+      if (!courseIds.length) {
+        setReviewStatsByCourseId({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("course_reviews")
+        .select("course_id, difficulty, would_recommend")
+        .in("course_id", courseIds);
+
+      if (error) {
+        console.error("Failed to load course review stats:", error);
+        return;
+      }
+
+      const groupedStats = (data || []).reduce((acc, review) => {
+        const courseId = review.course_id;
+        if (!courseId) return acc;
+
+        if (!acc[courseId]) {
+          acc[courseId] = {
+            difficultyTotal: 0,
+            difficultyCount: 0,
+            recommendCount: 0,
+            reviewCount: 0,
+          };
+        }
+
+        acc[courseId].reviewCount += 1;
+
+        if (review.difficulty != null) {
+          acc[courseId].difficultyTotal += Number(review.difficulty);
+          acc[courseId].difficultyCount += 1;
+        }
+
+        if (review.would_recommend === true) {
+          acc[courseId].recommendCount += 1;
+        }
+
+        return acc;
+      }, {});
+
+      const nextStats = Object.fromEntries(
+        Object.entries(groupedStats).map(([courseId, stats]) => [
+          courseId,
+          {
+            rating:
+              stats.reviewCount > 0
+                ? {
+                    avg:
+                      stats.difficultyCount > 0
+                        ? stats.difficultyTotal / stats.difficultyCount
+                        : 0,
+                    count: stats.reviewCount,
+                  }
+                : null,
+            recommend:
+              stats.reviewCount > 0
+                ? Math.round((stats.recommendCount / stats.reviewCount) * 100)
+                : null,
+          },
+        ]),
+      );
+
+      setReviewStatsByCourseId(nextStats);
+    }
+
+    loadReviewStats();
+  }, [courses]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div
@@ -311,6 +391,8 @@ export default function PrerequisiteSidebar({
                   key={course.id}
                   course={course}
                   isEnrolled={enrolledCourseIds.has(course.id)}
+                  rating={reviewStatsByCourseId[course.id]?.rating ?? null}
+                  recommend={reviewStatsByCourseId[course.id]?.recommend ?? null}
                   isMobile={isMobile}
                   onQuickAdd={onQuickAddCourse}
                   disabled={!mobileSemesterId && isMobile}
@@ -354,14 +436,14 @@ export default function PrerequisiteSidebar({
 function DraggableCourseCard({
   course,
   isEnrolled,
+  rating,
+  recommend,
   electiveAttribute,
   isMobile = false,
   onQuickAdd,
   disabled = false,
 }) {
   const navigate = useNavigate();
-  const [rating, setRating] = useState(null);
-  const [recommend, setRecommend] = useState(null);
   const ref = useRef(null);
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
@@ -388,44 +470,6 @@ function DraggableCourseCard({
       isDragging: !!monitor.isDragging(),
     }),
   });
-
-  useEffect(() => {
-    async function loadRating() {
-      const { data } = await supabase
-        .from("course_reviews")
-        .select("difficulty, would_recommend")
-        .eq("course_id", course.id);
-
-      if (!data || data.length === 0) {
-        setRating({ avg: 0, count: 0 });
-        return;
-      }
-
-      const avg =
-        data.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
-        data.length;
-
-        const recommendCount = data.filter(
-          (r) => r.would_recommend === true
-        ).length;
-
-        const percent =
-          data.length > 0
-            ? Math.round((recommendCount / data.length) * 100)
-            : 0;
-
-        setRecommend(percent);
-
-      setRating({
-        avg,
-        count: data.length,
-      });
-    }
-
-    loadRating();
-  }, [course.id]);
-
-  
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
