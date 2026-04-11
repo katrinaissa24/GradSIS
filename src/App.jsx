@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import DashboardLoadingShell from "./components/DashboardLoadingShell";
 
 const Auth = lazy(() => import("./pages/auth"));
 const OnBoarding = lazy(() => import("./pages/onboarding"));
@@ -11,9 +12,14 @@ const NewPassword = lazy(() => import("./pages/NewPass"));
 const CourseRating = lazy(() => import("./pages/CourseRating"));
 
 export default function App() {
+  const fallback =
+    typeof window !== "undefined" && window.location.pathname === "/dashboard"
+      ? <DashboardLoadingShell />
+      : <div style={{ padding: 24 }}>Loading...</div>;
+
   return (
     <Router>
-      <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+      <Suspense fallback={fallback}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/onboarding" element={<OnBoarding />} />

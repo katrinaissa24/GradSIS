@@ -1,5 +1,5 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { useRef, useEffect, useState } from "react";
+import { memo, useRef, useEffect, useState } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { Trash2 } from "lucide-react";
 import { supabase } from "../services/supabase";
