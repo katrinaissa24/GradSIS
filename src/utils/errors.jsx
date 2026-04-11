@@ -2,6 +2,22 @@ import { supabase } from "../services/supabase";
 import React, { useState, useEffect, useCallback } from "react";
 import "./errors.css";
 
+const PASSED_GRADES = [
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "PASS",
+];
+
 export default function Prerequisite({
   userId,
   selectedSemesterId,
@@ -10,8 +26,6 @@ export default function Prerequisite({
   currentCredits = 0,
   loadMode = "normal",
 }) {
-  const [passedCourseIds, setPassedCourseIds] = useState([]);
-  const [blockedCourseIds, setBlockedCourseIds] = useState([]);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [creditWarning, setCreditWarning] = useState("");
@@ -27,72 +41,25 @@ export default function Prerequisite({
     normal: { min: 13, max: 17, label: "Normal" },
     overload: { min: 18, max: Math.max(targetCredits, 24), label: "Overload" },
   };
+
   const activeLoadRule = LOAD_RULES[loadMode] || LOAD_RULES.normal;
   const MIN_CREDITS = activeLoadRule.min;
   const MAX_CREDITS = activeLoadRule.max;
 
-  const PASSED_GRADES = [
-    "A+",
-    "A",
-    "A-",
-    "B+",
-    "B",
-    "B-",
-    "C+",
-    "C",
-    "C-",
-    "D+",
-    "D",
-    "D-",
-    "PASS",
-  ];
-
   const fetchUserCourses = useCallback(async () => {
-    if (!userId) return;
-
+    if (!userId) return [];
     const { data, error } = await supabase
       .from("user_courses")
       .select("course_id, grade, status")
-      .eq("user_id", userId)
-      
+      .eq("user_id", userId);
 
     if (error) {
       console.error("fetchUserCourses:", error);
-      return;
+      return [];
     }
 
-    const passedIds = (data || [])
-      .filter((c) => PASSED_GRADES.includes(c.grade))
-      .map((c) => c.course_id);
-
-    const blockedIds = (data || [])
-      .filter((c) => {
-        const isCurrentlyEnrolled = !c.grade || c.grade === "";
-        const isPassed = PASSED_GRADES.includes(c.grade);
-        return isCurrentlyEnrolled || isPassed;
-      })
-      .map((c) => c.course_id);
-
-    setPassedCourseIds([...new Set(passedIds)]);
-    setBlockedCourseIds([...new Set(blockedIds)]);
+    return data || [];
   }, [userId]);
-
-  
-  useEffect(() => {
-    const init = async () => {
-      await fetchUserCourses();
-      checkCreditWarning(currentCredits);
-      setLoading(false);
-    };
-
-    init();
-  }, [fetchUserCourses, selectedSemesterId]);
-
-  // Re-run credit warning whenever targetCredits changes
-  useEffect(() => {
-    checkCreditWarning(currentCredits
-    );
-  }, [targetCredits, currentCredits]);
 
   function checkCreditWarning(total) {
     if (loadMode !== "underload" && total < MIN_CREDITS) {
@@ -112,6 +79,21 @@ export default function Prerequisite({
     }
   }
 
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      await fetchUserCourses();
+      checkCreditWarning(currentCredits);
+      setLoading(false);
+    };
+
+    init();
+  }, [fetchUserCourses, selectedSemesterId, currentCredits, loadMode, targetCredits]);
+
+  useEffect(() => {
+    checkCreditWarning(currentCredits);
+  }, [currentCredits, targetCredits, loadMode, MIN_CREDITS, MAX_CREDITS]);
+
   async function handleFetchCourse() {
     if (!codePrefix || !courseNumber) {
       setMessage({
@@ -121,75 +103,88 @@ export default function Prerequisite({
       return;
     }
 
+    const normalizedCode = codePrefix.trim().toUpperCase();
+    const normalizedNumber = courseNumber.trim();
+
     const { data, error } = await supabase
       .from("courses")
       .select("*")
-      .ilike("code", codePrefix.trim())
-      .eq("number", courseNumber.trim())
+      .eq("code", normalizedCode)
+      .eq("number", normalizedNumber)
       .limit(1)
       .single();
 
     if (error || !data) {
       setMessage({ text: "Course not found.", type: "error" });
       setSelectedCourse(null);
+      setRating(null);
+      setRecommend(null);
       return;
     }
 
     const { data: sameSemesterEnrollment, error: sameSemesterError } =
-  await supabase
-    .from("user_courses")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("semester_id", selectedSemesterId)
-    .eq("course_id", data.id)
-    .neq("status", "dropped")
-    .maybeSingle();
+      await supabase
+        .from("user_courses")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("semester_id", selectedSemesterId)
+        .eq("course_id", data.id)
+        .neq("status", "dropped")
+        .maybeSingle();
 
     if (sameSemesterError) {
-  setMessage({ text: "Error checking enrollment.", type: "error" });
-  setSelectedCourse(null);
-  return;
-}
+      setMessage({ text: "Error checking enrollment.", type: "error" });
+      setSelectedCourse(null);
+      setRating(null);
+      setRecommend(null);
+      return;
+    }
 
     if (sameSemesterEnrollment) {
-  setMessage({
-    text: "You already added this course in this semester.",
-    type: "warning",
-  });
-  setSelectedCourse(null);
-  return;
-}
+      setMessage({
+        text: "You already added this course in this semester.",
+        type: "warning",
+      });
+      setSelectedCourse(null);
+      setRating(null);
+      setRecommend(null);
+      return;
+    }
 
     setSelectedCourse(data);
-    const { data: reviews } = await supabase
+    setMessage(null);
+
+    const { data: reviews, error: reviewsError } = await supabase
       .from("course_reviews")
       .select("difficulty, would_recommend")
       .eq("course_id", data.id);
 
-    if (reviews && reviews.length > 0) {
+    if (reviewsError || !reviews) {
+      setRating(null);
+      setRecommend(null);
+      return;
+    }
+
+    if (reviews.length > 0) {
       const avg =
         reviews.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
         reviews.length;
 
       setRating({
-                  avg,
-                  count: reviews.length,
-                });
-              } else {
-                setRating(null);
-              }
-              setMessage(null);
+        avg,
+        count: reviews.length,
+      });
 
-              const recommendCount = reviews.filter(
-            (r) => r.would_recommend === true
-          ).length;
+      const recommendCount = reviews.filter(
+        (r) => r.would_recommend === true,
+      ).length;
 
-          const percent =
-            reviews.length > 0
-              ? Math.round((recommendCount / reviews.length) * 100)
-              : 0;
-
-          setRecommend(percent);
+      const percent = Math.round((recommendCount / reviews.length) * 100);
+      setRecommend(percent);
+    } else {
+      setRating(null);
+      setRecommend(null);
+    }
   }
 
   async function handleSelect() {
@@ -211,20 +206,20 @@ export default function Prerequisite({
 
     if (!selectedCourse) return;
 
-    const courseCredits = selectedCourse.credits || 0;
-    const newTotal = currentCredits + courseCredits;
-
-    if (newTotal > MAX_CREDITS) {
-      setMessage({
-        text: `Cannot add: this would bring your total to ${newTotal} credits (max is ${MAX_CREDITS}).`,
-        type: "error",
-      });
-      return;
-    }
-
     setRegistering(true);
 
     try {
+      const courseCredits = selectedCourse.credits || 0;
+      const newTotal = currentCredits + courseCredits;
+
+      if (newTotal > MAX_CREDITS) {
+        setMessage({
+          text: `Cannot add: this would bring your total to ${newTotal} credits (max is ${MAX_CREDITS}).`,
+          type: "error",
+        });
+        return;
+      }
+
       const { data: prereqs, error: prereqError } = await supabase
         .from("prerequisites")
         .select("prereq_course_id")
@@ -239,8 +234,26 @@ export default function Prerequisite({
       }
 
       if (prereqs?.length > 0) {
+        const { data: freshUserCourses, error: freshUserCoursesError } =
+          await supabase
+            .from("user_courses")
+            .select("course_id, grade")
+            .eq("user_id", userId);
+
+        if (freshUserCoursesError) {
+          setMessage({
+            text: "Error checking completed courses.",
+            type: "error",
+          });
+          return;
+        }
+
+        const freshPassedCourseIds = (freshUserCourses || [])
+          .filter((c) => PASSED_GRADES.includes(c.grade))
+          .map((c) => c.course_id);
+
         const missing = prereqs.filter(
-          (p) => !passedCourseIds.includes(p.prereq_course_id),
+          (p) => !freshPassedCourseIds.includes(p.prereq_course_id),
         );
 
         if (missing.length > 0) {
@@ -320,6 +333,8 @@ export default function Prerequisite({
       setSelectedCourse(null);
       setCodePrefix("");
       setCourseNumber("");
+      setRating(null);
+      setRecommend(null);
 
       if (onCourseRegistered) onCourseRegistered();
     } finally {

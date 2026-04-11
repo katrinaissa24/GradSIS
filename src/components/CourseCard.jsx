@@ -1,8 +1,7 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { memo, useRef, useEffect, useState } from "react";
-import { useDrag, useDrop } from "react-dnd";
+import { memo, useCallback, useRef, useEffect, useState } from "react";
+import { useDrag } from "react-dnd";
 import { Trash2 } from "lucide-react";
-import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 import { getCourseCredits } from "../constants/gpa";
@@ -19,7 +18,7 @@ export default function CourseCard({
 }) {
   const canEditGrade = semesterStatus === "previous" && !isLocked;
   const canDragCourse = !isLocked;
-  const ref = useRef(null);
+  const cardRef = useRef(null);
   const compactHeight = isMobile ? 40 : 44;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const courseCredits = getCourseCredits(course);
@@ -33,8 +32,9 @@ export default function CourseCard({
     type: "COURSE",
     canDrag: canDragCourse && !dragPreview,
     item: (monitor) => {
-      const rect = ref.current?.getBoundingClientRect();
+      const rect = cardRef.current?.getBoundingClientRect();
       const clientOffset = monitor.getClientOffset();
+
       return {
         id: course.id,
         course,
@@ -79,12 +79,15 @@ export default function CourseCard({
 
   function commitCredits() {
     let parsed = parseFloat(creditsDraft);
+
     if (!Number.isFinite(parsed) || parsed < 0) parsed = 0;
     if (parsed > 12) parsed = 12;
+
     if (parsed === courseCredits) {
       setCreditsDraft(String(courseCredits));
       return;
     }
+
     setCreditsDraft(String(parsed));
     updateField("credits", parsed);
   }
@@ -104,7 +107,7 @@ export default function CourseCard({
           alignItems: "center",
           flexDirection: "row",
           gap: 10,
-          cursor: isLocked ? "default" : "grab",
+          cursor: isLocked ? "default" : isMobile ? "default" : "grab",
           transition: "opacity 0.15s ease",
           opacity: dragPreview ? 1 : showAsHidden ? 0 : isDragging && isMobile ? 0.3 : 1,
           visibility: showAsHidden ? "hidden" : "visible",
@@ -183,6 +186,7 @@ export default function CourseCard({
             <span style={{ fontSize: 12, color: "#9ca3af", whiteSpace: "nowrap" }}>
               Credits
             </span>
+
             {isLocked ? (
               <span style={{ fontSize: 14, fontWeight: 600, color: "#374151", minWidth: 20, textAlign: "center" }}>
                 {courseCredits}
