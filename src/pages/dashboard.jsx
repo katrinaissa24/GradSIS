@@ -1,4 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { supabase } from "../services/supabase";
 import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
@@ -6,7 +14,6 @@ import { DndProvider, useDragLayer } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
 import { MultiBackend, MouseTransition, TouchTransition } from "react-dnd-multi-backend";
-import CustomDragLayer from "../components/CustomDragLayer";
 import {
   calculateCumulativeGPAWithRepeats,
   calculateGPACreditHours,
@@ -21,17 +28,131 @@ import {
 } from "../utils/exportPlan";
 
 const MOBILE_BREAKPOINT = 768;
+const TABLET_BREAKPOINT = 1100;
 const LOAD_CONFIG = {
   underload: { targetCredits: 12 },
   normal: { targetCredits: 17 },
   overload: { targetCredits: 21 },
 };
 
+const DND_OPTIONS = {
+  backends: [
+    { id: "html5", backend: HTML5Backend, transition: MouseTransition },
+    {
+      id: "touch",
+      backend: TouchBackend,
+      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
+      preview: true,
+      transition: TouchTransition,
+    },
+  ],
+};
+
+const EMPTY_DASHBOARD_REVIEW_STATS = {};
+const dashboardReviewStatsCache = new Map();
+const pendingDashboardReviewStats = new Set();
+
+function buildDashboardReviewStatsLookup(courseIds, reviews) {
+  const groupedStats = (reviews || []).reduce((acc, review) => {
+    const courseId = review.course_id;
+    if (!courseId) return acc;
+
+    if (!acc[courseId]) {
+      acc[courseId] = {
+        difficultyTotal: 0,
+        difficultyCount: 0,
+        recommendCount: 0,
+        reviewCount: 0,
+      };
+    }
+
+    acc[courseId].reviewCount += 1;
+
+    if (review.difficulty != null) {
+      acc[courseId].difficultyTotal += Number(review.difficulty);
+      acc[courseId].difficultyCount += 1;
+    }
+
+    if (review.would_recommend === true) {
+      acc[courseId].recommendCount += 1;
+    }
+
+    return acc;
+  }, {});
+
+  return Object.fromEntries(
+    courseIds.map((courseId) => {
+      const stats = groupedStats[courseId];
+
+      return [
+        courseId,
+        {
+          avgDifficulty:
+            stats?.difficultyCount > 0
+              ? stats.difficultyTotal / stats.difficultyCount
+              : null,
+          recommendPercent:
+            stats?.reviewCount > 0
+              ? Math.round((stats.recommendCount / stats.reviewCount) * 100)
+              : null,
+          reviewCount: stats?.reviewCount ?? 0,
+        },
+      ];
+    }),
+  );
+}
+
+let customDragLayerModulePromise;
+
+function loadCustomDragLayer() {
+  if (!customDragLayerModulePromise) {
+    customDragLayerModulePromise = import("../components/CustomDragLayer");
+  }
+
+  return customDragLayerModulePromise;
+}
+
+const LazyCustomDragLayer = lazy(loadCustomDragLayer);
+
+function createDashboardProfiler(label) {
+  if (!import.meta.env.DEV || typeof performance === "undefined") {
+    return {
+      step() {},
+      end() {},
+    };
+  }
+
+  const start = performance.now();
+  let last = start;
+  const entries = [];
+
+  return {
+    step(name) {
+      const now = performance.now();
+      entries.push({
+        step: name,
+        duration_ms: Math.round((now - last) * 10) / 10,
+        elapsed_ms: Math.round((now - start) * 10) / 10,
+      });
+      last = now;
+    },
+    end() {
+      if (entries.length === 0) return;
+      console.groupCollapsed(
+        `[dashboard] ${label} (${Math.round((performance.now() - start) * 10) / 10}ms)`,
+      );
+      console.table(entries);
+      console.groupEnd();
+    },
+  };
+}
+
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
   const [semesters, setSemesters] = useState([]);
   const [prerequisiteCourses, setPrerequisiteCourses] = useState([]);
+  const [hasLoadedPrerequisiteCourses, setHasLoadedPrerequisiteCourses] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [addingSemester, setAddingSemester] = useState(false);
@@ -42,6 +163,11 @@ export default function Dashboard() {
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
+  const [isTabletLayout, setIsTabletLayout] = useState(() =>
+    typeof window !== "undefined"
+      ? window.innerWidth <= TABLET_BREAKPOINT
+      : false,
+  );
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= MOBILE_BREAKPOINT
@@ -54,14 +180,67 @@ export default function Dashboard() {
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
+  const skipNextPlanReloadRef = useRef(false);
+  const initializeRequestIdRef = useRef(0);
   const navigate = useNavigate();
+
+  const updateSemesterList = useCallback((updater) => {
+    setSemesters((prev) => {
+      const next = updater(prev);
+      return next === prev ? prev : next;
+    });
+  }, []);
+
+  const updateSemesterById = useCallback((semesterId, updater) => {
+    updateSemesterList((prev) => {
+      let changed = false;
+
+      const next = prev.map((semester) => {
+        if (semester.id !== semesterId) {
+          return semester;
+        }
+
+        const updatedSemester = updater(semester);
+        if (updatedSemester !== semester) {
+          changed = true;
+        }
+
+        return updatedSemester;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [updateSemesterList]);
+
+  const updateSemesterContainingCourse = useCallback((courseId, updater) => {
+    updateSemesterList((prev) => {
+      let changed = false;
+
+      const next = prev.map((semester) => {
+        const courseIndex = semester.user_courses.findIndex((course) => course.id === courseId);
+        if (courseIndex === -1) {
+          return semester;
+        }
+
+        const updatedSemester = updater(semester, courseIndex);
+        if (updatedSemester !== semester) {
+          changed = true;
+        }
+
+        return updatedSemester;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [updateSemesterList]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
   }
 
-  function handleToggleAddCourse(semesterId, shouldOpen) {
+  const handleToggleAddCourse = useCallback((semesterId, shouldOpen) => {
     setOpenAddCourseSemesterId((currentId) => {
       if (!shouldOpen) {
         return currentId === semesterId ? null : currentId;
@@ -69,7 +248,7 @@ export default function Dashboard() {
 
       return semesterId;
     });
-  }
+  }, []);
 
   const PASSING_GRADES = new Set([
     "A+",
@@ -187,11 +366,25 @@ export default function Dashboard() {
   }
 
   async function initialize(silent = false, planIdOverride = null) {
+    const requestId = ++initializeRequestIdRef.current;
+    const profiler = createDashboardProfiler(
+      silent ? "initialize:plan-switch" : "initialize:first-load",
+    );
+    const isStale = () => requestId !== initializeRequestIdRef.current;
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
+      profiler.step("session");
+
+      if (isStale()) {
+        profiler.step("stale-after-session");
+        profiler.end();
+        return;
+      }
 
       if (!sessionData?.session) {
         navigate("/auth");
+        profiler.end();
         return;
       }
 
@@ -200,136 +393,194 @@ export default function Dashboard() {
       const userId = user.id;
 
       try {
-        const { data: userRow } = await supabase
+        const userProfilePromise = supabase
           .from("users")
-          .select("name, email, major_id")
+          .select(`
+            name,
+            email,
+            major_id,
+            majors (
+              name
+            )
+          `)
           .eq("id", userId)
           .single();
+        const plansPromise = supabase
+          .from("plans")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
 
-        let majorName = "";
-        if (userRow?.major_id) {
-          const { data: majorRow } = await supabase
-            .from("majors")
-            .select("name")
-            .eq("id", userRow.major_id)
-            .single();
-          majorName = majorRow?.name || "";
+        const [
+          { data: userRow, error: userRowError },
+          { data: fetchedPlans, error: plansError },
+        ] = await Promise.all([userProfilePromise, plansPromise]);
+        profiler.step("profile+plans");
+
+        if (isStale()) {
+          profiler.step("stale-after-profile+plans");
+          profiler.end();
+          return;
         }
+
+        if (userRowError) throw userRowError;
+        if (plansError) throw plansError;
+
+        let safePlans = fetchedPlans || [];
+
+        const hasPlanA = safePlans.some((p) => p.name === "Plan A");
+        const hasPlanB = safePlans.some((p) => p.name === "Plan B");
+
+        const plansToCreate = [];
+
+        if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
+        if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
+
+        if (plansToCreate.length > 0) {
+          const { data: createdPlans, error: createError } = await supabase
+            .from("plans")
+            .insert(plansToCreate)
+            .select();
+
+          if (createError) throw createError;
+
+          safePlans = [...safePlans, ...createdPlans];
+        }
+        profiler.step("ensure-plans");
+
+        if (isStale()) {
+          profiler.step("stale-after-ensure-plans");
+          profiler.end();
+          return;
+        }
+
+        setPlans(safePlans);
+
+        let activePlanId = planIdOverride || selectedPlanId;
+
+        if (!activePlanId && safePlans.length > 0) {
+          activePlanId = safePlans[0].id;
+          skipNextPlanReloadRef.current = true;
+          setSelectedPlanId(activePlanId);
+        }
+
+        if (!activePlanId) {
+          setUserProfile({
+            name: userRow?.name || user.user_metadata?.name || "",
+            email: userRow?.email || user.email || "",
+            major: "",
+          });
+          setSemesters([]);
+          setLoading(false);
+          profiler.step("empty-plan");
+          profiler.end();
+          return;
+        }
+
+        const { data: userSemesters, error: semestersError } = await supabase
+          .from("user_semesters")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("plan_id", activePlanId)
+          .order("semester_number", { ascending: true });
+        profiler.step("semesters");
+
+        if (isStale()) {
+          profiler.step("stale-after-semesters");
+          profiler.end();
+          return;
+        }
+
+        const majorData = Array.isArray(userRow?.majors)
+          ? userRow.majors[0]
+          : userRow?.majors;
 
         setUserProfile({
           name: userRow?.name || user.user_metadata?.name || "",
           email: userRow?.email || user.email || "",
-          major: majorName,
+          major: majorData?.name || "",
         });
-      } catch (profileErr) {
-        console.error("Failed to load user profile for export:", profileErr);
-        setUserProfile({
-          name: user.user_metadata?.name || "",
-          email: user.email || "",
-          major: "",
-        });
-      }
 
-      const { data: fetchedPlans, error: plansError } = await supabase
-        .from("plans")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: true });
+        if (semestersError) throw semestersError;
 
-      if (plansError) throw plansError;
+        const safeSemesters = userSemesters || [];
+        const semesterIds = safeSemesters.map((s) => s.id);
+        let userCourses = [];
 
-      let safePlans = fetchedPlans || [];
-
-      const hasPlanA = safePlans.some((p) => p.name === "Plan A");
-      const hasPlanB = safePlans.some((p) => p.name === "Plan B");
-
-      const plansToCreate = [];
-
-      if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
-      if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
-
-      if (plansToCreate.length > 0) {
-        const { data: createdPlans, error: createError } = await supabase
-          .from("plans")
-          .insert(plansToCreate)
-          .select();
-
-        if (createError) throw createError;
-
-        safePlans = [...safePlans, ...createdPlans];
-      }
-
-      setPlans(safePlans);
-
-      let activePlanId = planIdOverride || selectedPlanId;
-
-      if (!activePlanId && safePlans.length > 0) {
-        activePlanId = safePlans[0].id;
-        setSelectedPlanId(activePlanId);
-      }
-
-      if (!activePlanId) {
-        setSemesters([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data: userSemesters, error: semestersError } = await supabase
-        .from("user_semesters")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("plan_id", activePlanId)
-        .order("semester_number", { ascending: true });
-
-      if (semestersError) throw semestersError;
-
-      const safeSemesters = userSemesters || [];
-      const semesterIds = safeSemesters.map((s) => s.id);
-      let userCourses = [];
-
-      if (semesterIds.length > 0) {
-        const { data: fetchedCourses, error: coursesError } = await supabase
-          .from("user_courses")
-          .select(
-            `
-            *,
-            courses (
-              id, name, code, number, credits,
-              course_eligible_attributes ( attribute )
+        if (semesterIds.length > 0) {
+          const { data: fetchedCourses, error: coursesError } = await supabase
+            .from("user_courses")
+            .select(
+              `
+              *,
+              courses (
+                id, name, code, number, credits,
+                course_eligible_attributes ( attribute )
+              )
+            `,
             )
-          `,
-          )
-          .in("semester_id", semesterIds);
+            .in("semester_id", semesterIds);
 
-        if (coursesError) throw coursesError;
-        userCourses = fetchedCourses || [];
-      }
+          if (coursesError) throw coursesError;
+          userCourses = fetchedCourses || [];
+        }
+        profiler.step("user-courses");
 
-      const formattedSemesters = safeSemesters.map((sem) => ({
-        ...sem,
-        user_courses: userCourses
-          .filter((c) => c.semester_id === sem.id)
-          .map((uc) => ({
-            ...uc,
-            courses: uc.courses ?? {
+        if (isStale()) {
+          profiler.step("stale-after-user-courses");
+          profiler.end();
+          return;
+        }
+
+        const userCoursesBySemesterId = userCourses.reduce((acc, course) => {
+          if (!acc[course.semester_id]) {
+            acc[course.semester_id] = [];
+          }
+          acc[course.semester_id].push({
+            ...course,
+            courses: course.courses ?? {
               id: null,
-              name: uc.attribute,
+              name: course.attribute,
               code: "ELECTIVE",
               credits: 3,
               course_eligible_attributes: [],
             },
-          })),
-      }));
+          });
+          return acc;
+        }, {});
 
-      setSemesters(formattedSemesters);
-      setLoading(false);
+        const formattedSemesters = safeSemesters.map((sem) => ({
+          ...sem,
+          user_courses: userCoursesBySemesterId[sem.id] || [],
+        }));
+
+        setSemesters(formattedSemesters);
+        setLoading(false);
+        profiler.step("state-commit");
+        profiler.end();
+      } catch (profileErr) {
+        console.error("Failed to load dashboard data:", profileErr);
+        if (!isStale()) {
+          setUserProfile({
+            name: user.user_metadata?.name || "",
+            email: user.email || "",
+            major: "",
+          });
+        }
+        throw profileErr;
+      }
     } catch (err) {
       console.error(err);
-      setLoading(false);
+      if (!isStale()) {
+        setLoading(false);
+      }
+      profiler.end();
     }
   }
 
   async function fetchPrerequisiteCourses() {
+    const profiler = createDashboardProfiler("catalog-fetch");
+
     try {
       const { data, error } = await supabase
         .from("courses")
@@ -340,28 +591,140 @@ export default function Dashboard() {
       `,
         )
         .order("code", { ascending: true });
+      profiler.step("courses");
 
       if (error) throw error;
       setPrerequisiteCourses(data || []);
+      profiler.step("state-commit");
     } catch (err) {
       console.error("Error fetching courses:", err);
+    } finally {
+      profiler.end();
     }
   }
 
   useEffect(() => {
     initialize();
-    fetchPrerequisiteCourses();
   }, []);
 
   useEffect(() => {
     if (selectedPlanId) {
+      if (skipNextPlanReloadRef.current) {
+        skipNextPlanReloadRef.current = false;
+        return;
+      }
       initialize(true, selectedPlanId);
     }
   }, [selectedPlanId]);
 
   useEffect(() => {
+    if (loading) return undefined;
+
+    let cancelled = false;
+    let timeoutId = null;
+    let idleId = null;
+
+    async function loadReviewStats() {
+      const profiler = createDashboardProfiler("review-stats");
+      const courseIds = [
+        ...new Set(
+          semesters.flatMap((semester) =>
+            (semester.user_courses || [])
+              .map((course) => course.course_id)
+              .filter(Boolean),
+          ),
+        ),
+      ];
+
+      if (!courseIds.length) {
+        setReviewStatsByCourseId(EMPTY_DASHBOARD_REVIEW_STATS);
+        profiler.step("empty");
+        profiler.end();
+        return;
+      }
+
+      const cachedStats = Object.fromEntries(
+        courseIds
+          .filter((courseId) => dashboardReviewStatsCache.has(courseId))
+          .map((courseId) => [courseId, dashboardReviewStatsCache.get(courseId)]),
+      );
+
+      setReviewStatsByCourseId(cachedStats);
+
+      const missingCourseIds = courseIds.filter(
+        (courseId) =>
+          !dashboardReviewStatsCache.has(courseId) &&
+          !pendingDashboardReviewStats.has(courseId),
+      );
+
+      if (!missingCourseIds.length) {
+        profiler.step("cache-hit");
+        profiler.end();
+        return;
+      }
+
+      missingCourseIds.forEach((courseId) => pendingDashboardReviewStats.add(courseId));
+
+      const { data, error } = await supabase
+        .from("course_reviews")
+        .select("course_id, difficulty, would_recommend")
+        .in("course_id", missingCourseIds);
+      profiler.step("query");
+
+      if (error) {
+        missingCourseIds.forEach((courseId) => pendingDashboardReviewStats.delete(courseId));
+        console.error("Failed to load dashboard review stats:", error);
+        profiler.end();
+        return;
+      }
+
+      const fetchedStats = buildDashboardReviewStatsLookup(missingCourseIds, data || []);
+
+      missingCourseIds.forEach((courseId) => {
+        pendingDashboardReviewStats.delete(courseId);
+        dashboardReviewStatsCache.set(courseId, fetchedStats[courseId]);
+      });
+
+      if (cancelled) {
+        profiler.step("cancelled");
+        profiler.end();
+        return;
+      }
+
+      setReviewStatsByCourseId((prev) => ({
+        ...prev,
+        ...fetchedStats,
+      }));
+      profiler.step("state-commit");
+      profiler.end();
+    }
+
+    const scheduleLoad = () => {
+      if (cancelled) return;
+      loadReviewStats();
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(scheduleLoad, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(scheduleLoad, 180);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [loading, semesters]);
+
+  useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+      setIsTabletLayout(window.innerWidth <= TABLET_BREAKPOINT);
     };
 
     handleResize();
@@ -389,10 +752,22 @@ export default function Dashboard() {
     }
   }, [isMobile]);
 
-  async function updateSemesterStatus(id, newStatus) {
-    setSemesters((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s)),
-    );
+  useEffect(() => {
+    const isCatalogOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
+    if (!isCatalogOpen || hasLoadedPrerequisiteCourses) return;
+
+    fetchPrerequisiteCourses();
+    setHasLoadedPrerequisiteCourses(true);
+  }, [hasLoadedPrerequisiteCourses, isMobile, mobileCatalogOpen, sidebarOpen]);
+
+  const updateSemesterStatus = useCallback(async (id, newStatus) => {
+    updateSemesterById(id, (semester) => {
+      if (semester.status === newStatus) {
+        return semester;
+      }
+
+      return { ...semester, status: newStatus };
+    });
 
     const { error } = await supabase
       .from("user_semesters")
@@ -404,22 +779,25 @@ export default function Dashboard() {
       console.error("Failed to update semester status:", error);
       await initialize();
     }
-  }
+  }, [authUser?.id, initialize, updateSemesterById]);
 
-  async function updateSemesterLoadMode(id, newLoadMode) {
+  const updateSemesterLoadMode = useCallback(async (id, newLoadMode) => {
     const targetCredits = LOAD_CONFIG[newLoadMode]?.targetCredits ?? 17;
 
-    setSemesters((prev) =>
-      prev.map((semester) =>
-        semester.id === id
-          ? {
-              ...semester,
-              load_mode: newLoadMode,
-              target_credits: targetCredits,
-            }
-          : semester,
-      ),
-    );
+    updateSemesterById(id, (semester) => {
+      if (
+        semester.load_mode === newLoadMode &&
+        semester.target_credits === targetCredits
+      ) {
+        return semester;
+      }
+
+      return {
+        ...semester,
+        load_mode: newLoadMode,
+        target_credits: targetCredits,
+      };
+    });
 
     const { error } = await supabase
       .from("user_semesters")
@@ -434,7 +812,7 @@ export default function Dashboard() {
       console.error("Failed to update semester load mode:", error);
       await initialize();
     }
-  }
+  }, [authUser?.id, initialize, updateSemesterById]);
 
   async function updateSemesterStudentStatus(id, newStudentStatus) {
     const normalized = newStudentStatus || null;
@@ -492,7 +870,7 @@ export default function Dashboard() {
       console.error("Failed to update semester lock:", error);
       await initialize();
     }
-  }
+  }, [authUser?.id, initialize, updateSemesterById]);
 
   async function updateCourseGrade(courseId, field, value) {
     const normalizedValue = field === "credits" ? Number(value) || 0 : value;
@@ -521,11 +899,12 @@ export default function Dashboard() {
     if (error) {
       console.error("Failed to update course:", error);
     }
-  }
+  }, [updateSemesterContainingCourse]);
 
-  function moveCourse(courseId, fromSemesterId, toSemesterId) {
-    setSemesters((prev) => {
+  const moveCourse = useCallback((courseId, fromSemesterId, toSemesterId) => {
+    updateSemesterList((prev) => {
       let movedCourse = null;
+      let changed = false;
 
       const updated = prev.map((sem) => {
         if (sem.id === fromSemesterId) {
@@ -536,13 +915,24 @@ export default function Dashboard() {
             }
             return true;
           });
-          return { ...sem, user_courses: remaining };
+
+          if (remaining.length !== sem.user_courses.length) {
+            changed = true;
+            return { ...sem, user_courses: remaining };
+          }
+
+          return sem;
         }
         return sem;
       });
 
+      if (!changed || !movedCourse) {
+        return prev;
+      }
+
       return updated.map((sem) => {
         if (sem.id === toSemesterId && movedCourse) {
+          changed = true;
           return {
             ...sem,
             user_courses: [
@@ -554,25 +944,27 @@ export default function Dashboard() {
         return sem;
       });
     });
-  }
+  }, [updateSemesterList]);
 
-  async function deleteCourse(courseId) {
-    setSemesters((prev) =>
-      prev.map((sem) => ({
-        ...sem,
-        user_courses: sem.user_courses.filter((c) => c.id !== courseId),
-      })),
-    );
+  const deleteCourse = useCallback(async (courseId) => {
+    updateSemesterContainingCourse(courseId, (semester) => {
+      const nextCourses = semester.user_courses.filter((course) => course.id !== courseId);
+      if (nextCourses.length === semester.user_courses.length) {
+        return semester;
+      }
+
+      return { ...semester, user_courses: nextCourses };
+    });
 
     await supabase.from("user_courses").delete().eq("id", courseId);
-  }
+  }, [updateSemesterContainingCourse]);
 
-  async function handleSidebarDrop(
+  const handleSidebarDrop = useCallback(async (
     course,
     semesterId,
     electiveAttribute,
     semesterTargetCredits = 15,
-  ) {
+  ) => {
     if (!semesterId) {
       alert("Please choose a semester first.");
       return;
@@ -713,13 +1105,10 @@ export default function Dashboard() {
           },
     };
 
-    setSemesters((prev) =>
-      prev.map((sem) =>
-        sem.id === semesterId
-          ? { ...sem, user_courses: [...sem.user_courses, optimisticEntry] }
-          : sem,
-      ),
-    );
+    updateSemesterById(semesterId, (semester) => ({
+      ...semester,
+      user_courses: [...semester.user_courses, optimisticEntry],
+    }));
 
     const { data, error } = await supabase
       .from("user_courses")
@@ -743,43 +1132,44 @@ export default function Dashboard() {
 
     if (error) {
       console.error("Failed to add course:", error);
-      setSemesters((prev) =>
-        prev.map((sem) =>
-          sem.id === semesterId
-            ? {
-                ...sem,
-                user_courses: sem.user_courses.filter((uc) => uc.id !== tempId),
-              }
-            : sem,
-        ),
-      );
+      updateSemesterById(semesterId, (semester) => {
+        const nextCourses = semester.user_courses.filter((uc) => uc.id !== tempId);
+        if (nextCourses.length === semester.user_courses.length) {
+          return semester;
+        }
+
+        return {
+          ...semester,
+          user_courses: nextCourses,
+        };
+      });
       return;
     }
 
-    setSemesters((prev) =>
-      prev.map((sem) =>
-        sem.id === semesterId
-          ? {
-              ...sem,
-              user_courses: sem.user_courses.map((uc) =>
-                uc.id === tempId
-                  ? {
-                      ...data,
-                      courses: data.courses ?? {
-                        id: null,
-                        name: attributeToUse,
-                        code: "ELECTIVE",
-                        credits: 3,
-                        course_eligible_attributes: [],
-                      },
-                    }
-                  : uc,
-              ),
-            }
-          : sem,
-      ),
-    );
-  }
+    updateSemesterById(semesterId, (semester) => {
+      const courseIndex = semester.user_courses.findIndex((uc) => uc.id === tempId);
+      if (courseIndex === -1) {
+        return semester;
+      }
+
+      const nextCourses = [...semester.user_courses];
+      nextCourses[courseIndex] = {
+        ...data,
+        courses: data.courses ?? {
+          id: null,
+          name: attributeToUse,
+          code: "ELECTIVE",
+          credits: 3,
+          course_eligible_attributes: [],
+        },
+      };
+
+      return {
+        ...semester,
+        user_courses: nextCourses,
+      };
+    });
+  }, [authUser?.id, semesters, updateSemesterById]);
 
   async function handleAddSemester() {
     const trimmedName = newSemesterName.trim();
@@ -884,7 +1274,7 @@ export default function Dashboard() {
     }
   }
 
-  async function handleMobileQuickAddCourse(courseId) {
+  const handleMobileQuickAddCourse = useCallback(async (courseId) => {
     const course = prerequisiteCourses.find((entry) => entry.id === courseId);
     if (!course) return;
 
@@ -898,9 +1288,9 @@ export default function Dashboard() {
       null,
       targetSemester?.target_credits ?? 15,
     );
-  }
+  }, [handleSidebarDrop, mobileQuickAddSemesterId, prerequisiteCourses, semesters]);
 
-  async function handleMobileQuickAddElective(bucket) {
+  const handleMobileQuickAddElective = useCallback(async (bucket) => {
     const targetSemester = semesters.find(
       (semester) => semester.id === mobileQuickAddSemesterId,
     );
@@ -911,7 +1301,7 @@ export default function Dashboard() {
       bucket,
       targetSemester?.target_credits ?? 15,
     );
-  }
+  }, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
 
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
@@ -919,23 +1309,11 @@ export default function Dashboard() {
   const totalHours = calculateGPACreditHours(allCourses, semesters);
   const { completed } = calcCredits(semesters);
   const total = 120;
-  const electiveRows = calcElectivesProgress(semesters);
-  const electivesRemainingTotal = electiveRows.reduce(
-    (sum, row) => sum + row.remaining,
-    0,
+  const electiveRows = useMemo(() => calcElectivesProgress(semesters), [semesters]);
+  const electivesRemainingTotal = useMemo(
+    () => electiveRows.reduce((sum, row) => sum + row.remaining, 0),
+    [electiveRows],
   );
-const DND_OPTIONS = {
-  backends: [
-    { id: "html5", backend: HTML5Backend, transition: MouseTransition },
-    {
-      id: "touch",
-      backend: TouchBackend,
-      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
-      preview: true,
-      transition: TouchTransition,
-    },
-  ],
-};
   const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
   const mobileElectivesPanel =
     isMobile && mobileElectivesOpen ? (
@@ -1015,12 +1393,12 @@ const DND_OPTIONS = {
     ) : null;
 
   if (loading) {
-    return <div style={{ padding: 20 }}>Initializing...</div>;
+    return <DashboardLoadingShell isMobile={isMobile} isTabletLayout={isTabletLayout} />;
   }
 
   return (
     <DndProvider backend={MultiBackend} options={DND_OPTIONS}>
-      <CustomDragLayer isMobile={isMobile} />
+      <DragLayerHost isMobile={isMobile} />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
         <div
@@ -1309,10 +1687,15 @@ const DND_OPTIONS = {
         <div
           style={{
             display: "flex",
-            flexDirection: isMobile ? "column" : "row",
-            gap: isMobile ? 16 : 24,
+            flexDirection: isMobile || isTabletLayout ? "column" : "row",
+            gap: isMobile ? 16 : isTabletLayout ? 20 : 24,
             alignItems: "flex-start",
-            padding: isMobile ? "0 16px 24px" : "0 24px 24px",
+            padding:
+              isMobile
+                ? "0 16px 24px"
+                : isTabletLayout
+                  ? "0 20px 24px"
+                  : "0 24px 24px",
           }}
         >
           {drawerOpen && (
@@ -1373,9 +1756,7 @@ const DND_OPTIONS = {
             <div style={{ flex: 1, overflowY: "auto" }}>
               <PrerequisiteSidebar
                 courses={prerequisiteCourses}
-                enrolledCourseIds={
-                  new Set(allCourses.map((uc) => uc.course_id).filter(Boolean))
-                }
+                enrolledCourseIds={enrolledCourseIds}
                 electiveRows={electiveRows}
                 allUserCourses={allCourses}
                 isMobile={isMobile}
@@ -1414,6 +1795,7 @@ const DND_OPTIONS = {
               isMobile={isMobile}
               isAddCourseOpen={openAddCourseSemesterId === sem.id}
               onToggleAddCourse={handleToggleAddCourse}
+              reviewStatsByCourseId={reviewStatsByCourseId}
             />
             ))}
 
@@ -1472,10 +1854,10 @@ const DND_OPTIONS = {
           {!isMobile && (
             <div
               style={{
-                width: 320,
+                width: isTabletLayout ? "100%" : 320,
                 flexShrink: 0,
-                position: "sticky",
-                top: 110,
+                position: isTabletLayout ? "static" : "sticky",
+                top: isTabletLayout ? "auto" : 110,
               }}
             >
               <div
@@ -1573,5 +1955,292 @@ function SidebarOverlay({ onClose }) {
         pointerEvents: isDragging ? "none" : "auto",
       }}
     />
+  );
+}
+
+function DragLayerHost({ isMobile }) {
+  const isDragging = useDragLayer((monitor) => monitor.isDragging());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    let cancelled = false;
+    let timeoutId = null;
+    let idleId = null;
+
+    const preload = () => {
+      if (cancelled) return;
+      loadCustomDragLayer().catch(() => {});
+    };
+
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(preload, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(preload, 500);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, []);
+
+  if (!isDragging) {
+    return null;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <LazyCustomDragLayer isMobile={isMobile} />
+    </Suspense>
+  );
+}
+
+function SkeletonBlock({
+  height,
+  width = "100%",
+  radius = 10,
+  style,
+}) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        background:
+          "linear-gradient(90deg, rgba(226,232,240,0.8) 0%, rgba(241,245,249,1) 50%, rgba(226,232,240,0.8) 100%)",
+        backgroundSize: "200% 100%",
+        animation: "dashboard-skeleton-shimmer 1.2s ease-in-out infinite",
+        ...style,
+      }}
+    />
+  );
+}
+
+function DashboardLoadingShell({ isMobile, isTabletLayout }) {
+  const semesterSkeletonCount = isMobile ? 2 : 3;
+
+  return (
+    <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
+      <style>
+        {`
+          @keyframes dashboard-skeleton-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+        `}
+      </style>
+
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 300,
+          background: "#fff",
+          borderBottom: "1px solid #e5e7eb",
+          padding: isMobile ? "12px 16px" : "14px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: isMobile ? "wrap" : "nowrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <SkeletonBlock height={30} width={34} radius={8} />
+          <SkeletonBlock height={24} width={110} radius={8} />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: isMobile ? "stretch" : "center",
+            gap: isMobile ? 10 : 24,
+            width: isMobile ? "100%" : "auto",
+            justifyContent: isMobile ? "space-between" : "flex-end",
+          }}
+        >
+          <div style={{ flex: isMobile ? 1 : "unset", minWidth: 0 }}>
+            <SkeletonBlock height={16} width={isMobile ? "100%" : 140} radius={6} />
+            {!isMobile && (
+              <>
+                <SkeletonBlock height={12} width={120} radius={6} style={{ marginTop: 8 }} />
+                <SkeletonBlock height={12} width={100} radius={6} style={{ marginTop: 6 }} />
+              </>
+            )}
+          </div>
+          <SkeletonBlock height={40} width={92} radius={8} />
+        </div>
+
+        {isMobile && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 8,
+              width: "100%",
+            }}
+          >
+            {[0, 1, 2].map((item) => (
+              <div
+                key={item}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 10,
+                  padding: "8px 10px",
+                  background: "#fafafa",
+                }}
+              >
+                <SkeletonBlock height={10} width="55%" radius={6} />
+                <SkeletonBlock height={14} width="70%" radius={6} style={{ marginTop: 8 }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: isMobile ? "20px 16px 8px" : "24px 24px 8px" }}>
+        <SkeletonBlock height={34} width={180} radius={10} />
+        <SkeletonBlock height={14} width={isMobile ? "100%" : 420} radius={8} style={{ marginTop: 12 }} />
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            marginTop: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <SkeletonBlock height={44} width={150} radius={10} />
+          <SkeletonBlock height={44} width={116} radius={10} />
+          {isMobile && <SkeletonBlock height={44} width={130} radius={10} />}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isMobile || isTabletLayout ? "column" : "row",
+          gap: isMobile ? 16 : isTabletLayout ? 20 : 24,
+          alignItems: "flex-start",
+          padding:
+            isMobile
+              ? "0 16px 24px"
+              : isTabletLayout
+                ? "0 20px 24px"
+                : "0 24px 24px",
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            gap: 20,
+            width: "100%",
+          }}
+        >
+          {Array.from({ length: semesterSkeletonCount }).map((_, index) => (
+            <div
+              key={index}
+              style={{
+                width: "100%",
+                background: "#fefefe",
+                borderRadius: 12,
+                padding: isMobile ? 12 : 16,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                display: "flex",
+                flexDirection: "column",
+                gap: isMobile ? 10 : 12,
+                borderLeft: "6px solid #dbeafe",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <SkeletonBlock height={22} width={160} radius={8} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                    <SkeletonBlock height={36} width={80} radius={8} />
+                    <SkeletonBlock height={36} width={76} radius={8} />
+                    <SkeletonBlock height={36} width={68} radius={8} />
+                  </div>
+                </div>
+                <SkeletonBlock height={70} width={isMobile ? "100%" : 250} radius={10} />
+              </div>
+
+              {[0, 1].map((courseRow) => (
+                <div
+                  key={courseRow}
+                  style={{
+                    padding: isMobile ? 10 : 12,
+                    borderRadius: 10,
+                    background: "#fff",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                  }}
+                >
+                  <SkeletonBlock height={16} width="70%" radius={6} />
+                  <SkeletonBlock height={12} width={90} radius={6} style={{ marginTop: 8 }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    <SkeletonBlock height={36} width={110} radius={8} />
+                    <SkeletonBlock height={36} width={90} radius={8} />
+                    <SkeletonBlock height={36} width={80} radius={8} />
+                  </div>
+                </div>
+              ))}
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <SkeletonBlock height={14} width={120} radius={6} />
+                <SkeletonBlock height={14} width={90} radius={6} />
+                <SkeletonBlock height={14} width={100} radius={6} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {!isMobile && (
+          <div
+            style={{
+              width: isTabletLayout ? "100%" : 320,
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: 14,
+                padding: 14,
+                border: "1px solid #eee",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              }}
+            >
+              <SkeletonBlock height={18} width={90} radius={8} />
+              <SkeletonBlock height={12} width={70} radius={6} style={{ marginTop: 8 }} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                {[0, 1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      padding: 10,
+                      background: "#fafafa",
+                    }}
+                  >
+                    <SkeletonBlock height={12} width="100%" radius={6} />
+                    <SkeletonBlock height={6} width="100%" radius={999} style={{ marginTop: 10 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

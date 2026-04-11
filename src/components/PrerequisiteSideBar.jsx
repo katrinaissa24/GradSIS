@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { memo, useState, useMemo, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
@@ -29,7 +29,70 @@ const PASSING_GRADES = new Set([
   "PASS",
 ]);
 
-export default function PrerequisiteSidebar({
+const VIRTUAL_LIST_OVERSCAN = 4;
+const COURSE_ROW_HEIGHT = 124;
+const MOBILE_COURSE_ROW_HEIGHT = 168;
+const EMPTY_REVIEW_STATS = {
+  rating: null,
+  recommend: null,
+};
+const catalogReviewStatsCache = new Map();
+const pendingCatalogReviewStats = new Set();
+
+function buildReviewStatsLookup(courseIds, reviews) {
+  const groupedStats = (reviews || []).reduce((acc, review) => {
+    const courseId = review.course_id;
+    if (!courseId) return acc;
+
+    if (!acc[courseId]) {
+      acc[courseId] = {
+        difficultyTotal: 0,
+        difficultyCount: 0,
+        recommendCount: 0,
+        reviewCount: 0,
+      };
+    }
+
+    acc[courseId].reviewCount += 1;
+
+    if (review.difficulty != null) {
+      acc[courseId].difficultyTotal += Number(review.difficulty);
+      acc[courseId].difficultyCount += 1;
+    }
+
+    if (review.would_recommend === true) {
+      acc[courseId].recommendCount += 1;
+    }
+
+    return acc;
+  }, {});
+
+  return Object.fromEntries(
+    courseIds.map((courseId) => {
+      const stats = groupedStats[courseId];
+
+      if (!stats || stats.reviewCount === 0) {
+        return [courseId, EMPTY_REVIEW_STATS];
+      }
+
+      return [
+        courseId,
+        {
+          rating: {
+            avg:
+              stats.difficultyCount > 0
+                ? stats.difficultyTotal / stats.difficultyCount
+                : 0,
+            count: stats.reviewCount,
+          },
+          recommend: Math.round((stats.recommendCount / stats.reviewCount) * 100),
+        },
+      ];
+    }),
+  );
+}
+
+function PrerequisiteSidebar({
   courses = [],
   enrolledCourseIds = new Set(),
   electiveRows = [],
@@ -44,6 +107,10 @@ export default function PrerequisiteSidebar({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
+  const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
+  const [catalogScrollTop, setCatalogScrollTop] = useState(0);
+  const [catalogViewportHeight, setCatalogViewportHeight] = useState(0);
+  const catalogListRef = useRef(null);
 
   const completedCourseIds = useMemo(() => {
     const ids = new Set();
@@ -52,6 +119,11 @@ export default function PrerequisiteSidebar({
     }
     return ids;
   }, [allUserCourses]);
+  const courseIds = useMemo(
+    () => courses.map((course) => course.id).filter(Boolean),
+    [courses],
+  );
+  const courseIdsKey = useMemo(() => courseIds.join(","), [courseIds]);
 
   const filtered = useMemo(() => {
     return courses.filter((c) => {
@@ -93,6 +165,116 @@ export default function PrerequisiteSidebar({
   const availableCount = courses.filter(
     (c) => !enrolledCourseIds.has(c.id) && !completedCourseIds.has(c.id),
   ).length;
+  const courseRowHeight = isMobile ? MOBILE_COURSE_ROW_HEIGHT : COURSE_ROW_HEIGHT;
+  const visibleRowCount = Math.max(
+    1,
+    Math.ceil((catalogViewportHeight || courseRowHeight) / courseRowHeight),
+  );
+  const virtualStartIndex = Math.max(
+    0,
+    Math.floor(catalogScrollTop / courseRowHeight) - VIRTUAL_LIST_OVERSCAN,
+  );
+  const virtualEndIndex = Math.min(
+    filtered.length,
+    virtualStartIndex + visibleRowCount + VIRTUAL_LIST_OVERSCAN * 2,
+  );
+  const virtualCourses = filtered.slice(virtualStartIndex, virtualEndIndex);
+  const topSpacerHeight = virtualStartIndex * courseRowHeight;
+  const bottomSpacerHeight = Math.max(
+    0,
+    (filtered.length - virtualEndIndex) * courseRowHeight,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReviewStats() {
+      if (!courseIds.length) {
+        setReviewStatsByCourseId({});
+        return;
+      }
+
+      const cachedStats = Object.fromEntries(
+        courseIds
+          .filter((courseId) => catalogReviewStatsCache.has(courseId))
+          .map((courseId) => [courseId, catalogReviewStatsCache.get(courseId)]),
+      );
+
+      setReviewStatsByCourseId(cachedStats);
+
+      const missingCourseIds = courseIds.filter(
+        (courseId) =>
+          !catalogReviewStatsCache.has(courseId) &&
+          !pendingCatalogReviewStats.has(courseId),
+      );
+
+      if (!missingCourseIds.length) {
+        return;
+      }
+
+      missingCourseIds.forEach((courseId) => pendingCatalogReviewStats.add(courseId));
+
+      const { data, error } = await supabase
+        .from("course_reviews")
+        .select("course_id, difficulty, would_recommend")
+        .in("course_id", missingCourseIds);
+
+      if (error) {
+        missingCourseIds.forEach((courseId) => pendingCatalogReviewStats.delete(courseId));
+        console.error("Failed to load course review stats:", error);
+        return;
+      }
+
+      const fetchedStats = buildReviewStatsLookup(missingCourseIds, data || []);
+
+      missingCourseIds.forEach((courseId) => {
+        pendingCatalogReviewStats.delete(courseId);
+        catalogReviewStatsCache.set(courseId, fetchedStats[courseId] || EMPTY_REVIEW_STATS);
+      });
+
+      if (cancelled) return;
+
+      setReviewStatsByCourseId((prev) => ({
+        ...prev,
+        ...fetchedStats,
+      }));
+    }
+
+    loadReviewStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseIds, courseIdsKey]);
+
+  useEffect(() => {
+    setCatalogScrollTop(0);
+    if (catalogListRef.current) {
+      catalogListRef.current.scrollTop = 0;
+    }
+  }, [search, filter, activeTab]);
+
+  useEffect(() => {
+    const node = catalogListRef.current;
+    if (!node) return undefined;
+
+    const updateViewportHeight = () => {
+      setCatalogViewportHeight(node.clientHeight);
+    };
+
+    updateViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateViewportHeight);
+      return () => window.removeEventListener("resize", updateViewportHeight);
+    }
+
+    const observer = new ResizeObserver(() => updateViewportHeight());
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [activeTab, isMobile]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div
@@ -285,6 +467,8 @@ export default function PrerequisiteSidebar({
           </div>
 
           <div
+            ref={catalogListRef}
+            onScroll={(e) => setCatalogScrollTop(e.currentTarget.scrollTop)}
             style={{
               flex: 1,
               overflowY: "auto",
@@ -306,16 +490,38 @@ export default function PrerequisiteSidebar({
                 No courses found
               </div>
             ) : (
-              filtered.map((course) => (
-                <DraggableCourseCard
-                  key={course.id}
-                  course={course}
-                  isEnrolled={enrolledCourseIds.has(course.id)}
-                  isMobile={isMobile}
-                  onQuickAdd={onQuickAddCourse}
-                  disabled={!mobileSemesterId && isMobile}
-                />
-              ))
+              <>
+                {topSpacerHeight > 0 && (
+                  <div
+                    style={{
+                      height: topSpacerHeight,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+
+                {virtualCourses.map((course) => (
+                  <DraggableCourseCard
+                    key={course.id}
+                    course={course}
+                    isEnrolled={enrolledCourseIds.has(course.id)}
+                    rating={reviewStatsByCourseId[course.id]?.rating ?? null}
+                    recommend={reviewStatsByCourseId[course.id]?.recommend ?? null}
+                    isMobile={isMobile}
+                    onQuickAdd={onQuickAddCourse}
+                    disabled={!mobileSemesterId && isMobile}
+                  />
+                ))}
+
+                {bottomSpacerHeight > 0 && (
+                  <div
+                    style={{
+                      height: bottomSpacerHeight,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>
@@ -351,17 +557,29 @@ export default function PrerequisiteSidebar({
   );
 }
 
+export default memo(
+  PrerequisiteSidebar,
+  (prevProps, nextProps) =>
+    prevProps.courses === nextProps.courses &&
+    prevProps.enrolledCourseIds === nextProps.enrolledCourseIds &&
+    prevProps.electiveRows === nextProps.electiveRows &&
+    prevProps.allUserCourses === nextProps.allUserCourses &&
+    prevProps.isMobile === nextProps.isMobile &&
+    prevProps.mobileSemesterId === nextProps.mobileSemesterId &&
+    prevProps.semesters === nextProps.semesters,
+);
+
 function DraggableCourseCard({
   course,
   isEnrolled,
+  rating,
+  recommend,
   electiveAttribute,
   isMobile = false,
   onQuickAdd,
   disabled = false,
 }) {
   const navigate = useNavigate();
-  const [rating, setRating] = useState(null);
-  const [recommend, setRecommend] = useState(null);
   const ref = useRef(null);
   const [{ isDragging }, drag, preview] = useDrag({
     type: "SIDEBAR_COURSE",
@@ -388,44 +606,6 @@ function DraggableCourseCard({
       isDragging: !!monitor.isDragging(),
     }),
   });
-
-  useEffect(() => {
-    async function loadRating() {
-      const { data } = await supabase
-        .from("course_reviews")
-        .select("difficulty, would_recommend")
-        .eq("course_id", course.id);
-
-      if (!data || data.length === 0) {
-        setRating({ avg: 0, count: 0 });
-        return;
-      }
-
-      const avg =
-        data.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
-        data.length;
-
-        const recommendCount = data.filter(
-          (r) => r.would_recommend === true
-        ).length;
-
-        const percent =
-          data.length > 0
-            ? Math.round((recommendCount / data.length) * 100)
-            : 0;
-
-        setRecommend(percent);
-
-      setRating({
-        avg,
-        count: data.length,
-      });
-    }
-
-    loadRating();
-  }, [course.id]);
-
-  
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });

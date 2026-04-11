@@ -142,10 +142,15 @@
     transform: scale(1.004);
 }
 
-.input img{
+.input-icon{
     width: 18px;
     height: 18px;
     margin: 0 16px;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
 }
 
 .input input{

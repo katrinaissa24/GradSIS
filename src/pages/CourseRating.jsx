@@ -3,6 +3,133 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase";
 const BAD_WORDS = ["fuck", "bitch", "ass", "shit", "badass"];
 
+function SkeletonBlock({
+  height,
+  width = "100%",
+  radius = 10,
+  style,
+}) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        background:
+          "linear-gradient(90deg, rgba(226,232,240,0.8) 0%, rgba(241,245,249,1) 50%, rgba(226,232,240,0.8) 100%)",
+        backgroundSize: "200% 100%",
+        animation: "reviews-skeleton-shimmer 1.2s ease-in-out infinite",
+        ...style,
+      }}
+    />
+  );
+}
+
+function CourseRatingLoadingShell() {
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24, fontFamily: "sans-serif" }}>
+      <style>
+        {`
+          @keyframes reviews-skeleton-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+        `}
+      </style>
+
+      <SkeletonBlock height={36} width={92} radius={8} style={{ marginBottom: 20 }} />
+
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 14,
+          padding: 20,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+          marginBottom: 24,
+        }}
+      >
+        <SkeletonBlock height={12} width={90} radius={6} />
+        <SkeletonBlock height={28} width="62%" radius={10} style={{ marginTop: 10 }} />
+        <SkeletonBlock height={14} width={80} radius={6} style={{ marginTop: 10 }} />
+        <SkeletonBlock height={12} width={70} radius={6} style={{ marginTop: 10 }} />
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <SkeletonBlock height={18} width={70} radius={8} />
+          <SkeletonBlock height={12} width={95} radius={6} />
+          <SkeletonBlock height={12} width={110} radius={6} />
+        </div>
+      </div>
+
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 14,
+          padding: 20,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+          marginBottom: 24,
+        }}
+      >
+        <SkeletonBlock height={20} width={150} radius={8} style={{ marginBottom: 16 }} />
+        <SkeletonBlock height={14} width={120} radius={6} />
+        <div style={{ display: "flex", gap: 8, marginTop: 10, marginBottom: 18 }}>
+          {[0, 1, 2, 3, 4].map((item) => (
+            <SkeletonBlock key={item} height={28} width={28} radius={999} />
+          ))}
+        </div>
+        <SkeletonBlock height={14} width={82} radius={6} style={{ marginBottom: 8 }} />
+        <SkeletonBlock height={90} radius={10} style={{ marginBottom: 14 }} />
+        <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+          <SkeletonBlock height={40} width={130} radius={8} />
+          <SkeletonBlock height={40} width={120} radius={8} />
+        </div>
+        <SkeletonBlock height={14} width={180} radius={6} style={{ marginBottom: 10 }} />
+        <div style={{ display: "flex", gap: 10 }}>
+          <SkeletonBlock height={38} width={90} radius={8} />
+          <SkeletonBlock height={38} width={90} radius={8} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <SkeletonBlock height={20} width={110} radius={8} />
+          <SkeletonBlock height={12} width={130} radius={6} style={{ marginTop: 8 }} />
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <SkeletonBlock height={48} width={140} radius={8} />
+          <SkeletonBlock height={48} width={140} radius={8} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {[0, 1, 2].map((item) => (
+          <div
+            key={item}
+            style={{
+              background: "#fff",
+              borderRadius: 14,
+              padding: 18,
+              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[0, 1, 2, 3, 4].map((star) => (
+                  <SkeletonBlock key={star} height={18} width={18} radius={999} />
+                ))}
+              </div>
+              <SkeletonBlock height={12} width={40} radius={6} />
+            </div>
+            <SkeletonBlock height={14} width="90%" radius={6} />
+            <SkeletonBlock height={14} width="75%" radius={6} style={{ marginTop: 8 }} />
+            <SkeletonBlock height={12} width={120} radius={6} style={{ marginTop: 12 }} />
+            <SkeletonBlock height={10} width={80} radius={6} style={{ marginTop: 10 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function censorComment(text) {
   return text.replace(/\S+/g, (word) => {
     const lower = word.toLowerCase();
@@ -184,7 +311,7 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
-  if (loading) return <div style={{ padding: 24 }}>Loading...</div>;
+  if (loading) return <CourseRatingLoadingShell />;
   if (!course) return <div style={{ padding: 24 }}>Course not found.</div>;
 
   return (

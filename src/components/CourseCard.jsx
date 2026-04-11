@@ -8,7 +8,7 @@ import { attributeOptions } from "../constants/attributes";
 import { getCourseCredits } from "../constants/gpa";
 import ConfirmModal from "./ConfirmModal";
 
-export default function CourseCard({
+function CourseCard({
   course,
   semesterStatus,
   isLocked = false,
@@ -382,3 +382,13 @@ export default function CourseCard({
     </>
   );
 }
+
+export default memo(
+  CourseCard,
+  (prevProps, nextProps) =>
+    prevProps.course === nextProps.course &&
+    prevProps.semesterStatus === nextProps.semesterStatus &&
+    prevProps.isLocked === nextProps.isLocked &&
+    prevProps.dragPreview === nextProps.dragPreview &&
+    prevProps.isMobile === nextProps.isMobile,
+);

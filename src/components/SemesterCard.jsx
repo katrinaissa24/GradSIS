@@ -4,7 +4,7 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 const STUDENT_STATUS_OPTIONS = [
@@ -31,6 +31,7 @@ export default function SemesterCard({
   isMobile = false,
   isAddCourseOpen = false,
   onToggleAddCourse,
+  reviewStatsByCourseId = {},
 }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
@@ -87,38 +88,32 @@ export default function SemesterCard({
   };
 
   useEffect(() => {
-    async function calculateDifficulty() {
+    function calculateDifficulty() {
       if (!semester.user_courses.length) return;
-
-      const courseIds = semester.user_courses.map(c => c.course_id);
-
-      const { data } = await supabase
-        .from("course_reviews")
-        .select("course_id, difficulty")
-        .in("course_id", courseIds);
 
       let totalWeightedDifficulty = 0;
       let totalCredits = 0;
-
       let missing = false;
 
-      semester.user_courses.forEach(course => {
-        const reviews = data?.filter(r => r.course_id === course.course_id) || [];
-
-        if (reviews.length === 0) {
+      semester.user_courses.forEach((course) => {
+        if (!course.course_id) {
           missing = true;
           return;
         }
 
-        const avgDifficulty =
-          reviews.reduce((sum, r) => sum + r.difficulty, 0) / reviews.length;
+        const stats = reviewStatsByCourseId[course.course_id];
+
+        if (!stats || stats.avgDifficulty == null) {
+          missing = true;
+          return;
+        }
 
         const credits =
           (course.credits != null ? Number(course.credits) : null) ||
           course.courses?.credits ||
           3;
 
-        totalWeightedDifficulty += avgDifficulty * credits;
+        totalWeightedDifficulty += stats.avgDifficulty * credits;
         totalCredits += credits;
       });
 
@@ -134,11 +129,11 @@ export default function SemesterCard({
         setSemesterDifficulty(null);
       }
 
-      setMissingRatings(missing || data.length === 0);
+      setMissingRatings(missing);
     }
 
     calculateDifficulty();
-  }, [semester.user_courses]);
+  }, [semester.user_courses, reviewStatsByCourseId]);
 
   const statusButtons = (
     <div
@@ -483,8 +478,8 @@ export default function SemesterCard({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 10,
-                flex: "1 1 320px",
+                gap: 12,
+                width: "100%",
                 minWidth: 0,
               }}
             >
@@ -493,32 +488,41 @@ export default function SemesterCard({
                   display: "flex",
                   alignItems: "flex-start",
                   justifyContent: "space-between",
-                  gap: 8,
+                  gap: 12,
                   width: "100%",
-                  flexWrap: "wrap",
                 }}
               >
-                <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
+                <h3
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 600,
+                    margin: 0,
+                    minWidth: 0,
+                    flex: "1 1 auto",
+                  }}
+                >
                   {semester.name}
                 </h3>
-                {isMobile && actionButtons}
+                <div style={{ flexShrink: 0 }}>{actionButtons}</div>
               </div>
-              {statusButtons}
 
-              {canShowLockButton && (
-                <button
-                  type="button"
-                  onClick={() => updateLock?.(semester.id, !isLocked)}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 16,
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                  width: "100%",
+                }}
+              >
+                <div
                   style={{
-                    padding: isMobile ? "6px 10px" : "7px 12px",
-                    borderRadius: 8,
-                    border: `1px solid ${isLocked ? "#2563eb" : "#111"}`,
-                    background: isLocked ? "#2563eb" : "#fff",
-                    color: isLocked ? "#fff" : "#111",
-                    cursor: "pointer",
-                    fontSize: isMobile ? 12 : 13,
-                    minHeight: isMobile ? 34 : 36,
-                    width: "fit-content",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    flex: "1 1 320px",
+                    minWidth: 0,
                   }}
                 >
                   {isLocked ? "Unlock" : "Lock"}
@@ -746,3 +750,13 @@ export default function SemesterCard({
     </div>
   );
 }
+
+export default memo(
+  SemesterCard,
+  (prevProps, nextProps) =>
+    prevProps.semester === nextProps.semester &&
+    prevProps.isMobile === nextProps.isMobile &&
+    prevProps.isAddCourseOpen === nextProps.isAddCourseOpen &&
+    prevProps.reviewStatsByCourseId === nextProps.reviewStatsByCourseId &&
+    prevProps.userId === nextProps.userId,
+);
