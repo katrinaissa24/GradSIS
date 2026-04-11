@@ -14,6 +14,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("/src/services/supabase.ts")) {
+            return "supabase";
+          }
+
           if (!id.includes("node_modules")) return;
 
           if (id.includes("@supabase/supabase-js")) {
