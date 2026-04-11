@@ -59,10 +59,14 @@ export default function CourseCard({
 
   const [, drop] = useDrop({ accept: "COURSE" });
 
-  // Always attach drag+drop to the same ref so it never goes stale between drags.
-  if (!dragPreview) {
-    drag(drop(ref));
-  }
+  // Callback ref pattern matches PrerequisiteSidebar's working drag setup —
+  // attaches the connectors reliably whenever the DOM node mounts/changes.
+  const attachDragRef = (node) => {
+    ref.current = node;
+    if (!dragPreview && node) {
+      drag(drop(node));
+    }
+  };
 
   async function updateField(field, value) {
     updateCourse(course.id, field, value);
@@ -90,7 +94,7 @@ export default function CourseCard({
   return (
     <>
       <div
-        ref={dragPreview ? null : ref}
+        ref={dragPreview ? null : attachDragRef}
         style={{
           padding: isMobile ? 10 : 12,
           borderRadius: 10,
