@@ -67,7 +67,6 @@
     flex-direction:column;
     margin: auto;
     width: 420px;
-    margin-top: 20px; 
     background: #fff;
     padding-bottom: 20px;
     border-radius: 12px;
@@ -211,7 +210,7 @@
     background:#eaeaea;
     color: #676767;
     box-shadow: none;
-    cursor: default;
+    cursor: pointer;
 }
 
 .gray:hover{
