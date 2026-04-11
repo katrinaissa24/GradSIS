@@ -2020,7 +2020,7 @@ function DashboardDndProvider({ children, isMobile }) {
     return <MultiDndProvider options={DND_OPTIONS}>{children}</MultiDndProvider>;
   }
 
-  return <ReactDndProvider backend={HTML5Backend}>{children}</ReactDndProvider>;
+  return <DndProvider backend={HTML5Backend}>{children}</DndProvider>;
 }
 
 function SidebarOverlay({ onClose }) {
