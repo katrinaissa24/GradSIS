@@ -7,7 +7,7 @@ import { attributeOptions } from "../constants/attributes";
 import { getCourseCredits } from "../constants/gpa";
 import ConfirmModal from "./ConfirmModal";
 
-function CourseCard({
+export default function CourseCard({
   course,
   semesterStatus,
   isLocked = false,
@@ -57,23 +57,24 @@ function CourseCard({
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  const setCardNode = useCallback((node) => {
-    cardRef.current = node;
-  }, []);
+  const [, drop] = useDrop({ accept: "COURSE" });
 
-  const setDragHandleNode = useCallback(
-    (node) => {
-      if (!node || dragPreview || isMobile) {
-        return;
-      }
+  // Callback ref pattern matches PrerequisiteSidebar's working drag setup —
+  // attaches the connectors reliably whenever the DOM node mounts/changes.
+  const attachDragRef = (node) => {
+    ref.current = node;
+    if (!dragPreview && node) {
+      drag(drop(node));
+    }
+  };
 
-      drag(node);
-    },
-    [drag, dragPreview, isMobile],
-  );
-
-  function updateField(field, value) {
+  async function updateField(field, value) {
     updateCourse(course.id, field, value);
+    const { error } = await supabase
+      .from("user_courses")
+      .update({ [field]: value })
+      .eq("id", course.id);
+    if (error) console.error(`Failed to update ${field}:`, error);
   }
 
   function commitCredits() {
@@ -96,104 +97,69 @@ function CourseCard({
   return (
     <>
       <div
-        ref={dragPreview ? null : setCardNode}
+        ref={dragPreview ? null : attachDragRef}
         style={{
           padding: isMobile ? 10 : 12,
           borderRadius: 10,
           background: "#fff",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
           display: "flex",
-          alignItems: isMobile ? "stretch" : "center",
-          flexDirection: isMobile ? "column" : "row",
+          alignItems: "center",
+          flexDirection: "row",
           gap: 10,
           cursor: isLocked ? "default" : isMobile ? "default" : "grab",
           transition: "opacity 0.15s ease",
-          opacity: dragPreview
-            ? 1
-            : showAsHidden
-              ? 0.15
-              : isDragging && isMobile
-                ? 0.3
-                : 1,
+          opacity: dragPreview ? 1 : showAsHidden ? 0 : isDragging && isMobile ? 0.3 : 1,
+          visibility: showAsHidden ? "hidden" : "visible",
           touchAction: isMobile ? "pan-y" : "none",
+          flexWrap: isMobile ? "wrap" : "nowrap",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            width: isMobile ? "100%" : "auto",
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
-          {!isLocked && (
-            <div
-              ref={dragPreview || isMobile ? null : setDragHandleNode}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 4px)",
-                gap: 3,
-                cursor: "grab",
-                opacity: 0.6,
-                padding: 4,
-              }}
-            >
-              {[...Array(6)].map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: 4,
-                    height: 4,
-                    background: "#6b7280",
-                    borderRadius: "50%",
-                  }}
-                />
-              ))}
-            </div>
-          )}
+        {/* Drag handle */}
+        {!isLocked && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 4px)",
+              gap: 3,
+              cursor: "grab",
+              opacity: 0.4,
+              padding: "4px 2px",
+              flexShrink: 0,
+            }}
+          >
+            {[...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                style={{ width: 4, height: 4, background: "#9ca3af", borderRadius: "50%" }}
+              />
+            ))}
+          </div>
+        )}
 
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, lineHeight: 1.35 }}>
-              {course.courses?.name ?? "Elective Slot"} (
-              {course.courses?.code ?? "ELECTIVE"}{" "}
-              {course.courses?.number ?? ""})
-            </div>
+        {/* Course name */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, lineHeight: 1.35, fontSize: isMobile ? 13 : 14 }}>
+            {course.courses?.name ?? "Elective Slot"}{" "}
+            <span style={{ fontWeight: 400, color: "#6b7280", fontSize: isMobile ? 12 : 13 }}>
+              ({course.courses?.code ?? "ELECTIVE"} {course.courses?.number ?? ""})
+            </span>
           </div>
         </div>
 
+        {/* Right-side controls */}
         <div
           style={{
             display: "flex",
-            gap: 8,
-            alignItems: isMobile ? "stretch" : "center",
-            width: isMobile ? "100%" : "auto",
-            flexDirection: "row",
-            flexWrap: "wrap",
-            marginLeft: isMobile ? 0 : "auto",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
-            flex: isMobile ? "1 1 100%" : "0 0 auto",
+            gap: 6,
+            alignItems: "center",
+            flexShrink: 0,
+            flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
+          {/* Attribute */}
           {isLocked ? (
-            <div
-              style={{
-                padding: isMobile ? "6px 8px" : "8px 10px",
-                borderRadius: 6,
-                minHeight: compactHeight,
-                width: isMobile ? "calc(50% - 4px)" : "auto",
-                fontSize: isMobile ? 14 : 16,
-                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 1 auto",
-                display: "flex",
-                alignItems: "center",
-                border: "1px solid #e5e7eb",
-                background: "#f9fafb",
-                color: "#374151",
-              }}
-            >
-              {course.attribute}
-            </div>
+            <span style={{ fontSize: 13, color: "#6b7280" }}>{course.attribute}</span>
           ) : (
             <select
               value={course.attribute}
@@ -201,61 +167,30 @@ function CourseCard({
               onTouchStart={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               style={{
-                padding: isMobile ? "6px 8px" : "8px 10px",
+                padding: "6px 8px",
                 borderRadius: 6,
+                fontSize: 13,
+                border: "1px solid #d1d5db",
+                background: "#fff",
                 minHeight: compactHeight,
-                width: isMobile ? "calc(50% - 4px)" : "auto",
-                fontSize: isMobile ? 14 : 16,
-                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 1 auto",
               }}
             >
               {attributeOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
+                <option key={opt} value={opt}>{opt}</option>
               ))}
             </select>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 auto",
-              width: isMobile ? "calc(50% - 4px)" : "auto",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                color: "#6b7280",
-                fontWeight: 600,
-                textTransform: "uppercase",
-              }}
-            >
-              Cr
+          {/* Credits */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 12, color: "#9ca3af", whiteSpace: "nowrap" }}>
+              Credits
             </span>
 
             {isLocked ? (
-              <div
-                style={{
-                  padding: isMobile ? "6px 8px" : "8px 10px",
-                  borderRadius: 6,
-                  minHeight: compactHeight,
-                  width: 56,
-                  fontSize: isMobile ? 14 : 16,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
-                  color: "#111",
-                }}
-              >
+              <span style={{ fontSize: 14, fontWeight: 600, color: "#374151", minWidth: 20, textAlign: "center" }}>
                 {courseCredits}
-              </div>
+              </span>
             ) : (
               <input
                 type="number"
@@ -265,49 +200,36 @@ function CourseCard({
                 value={creditsDraft}
                 onChange={(e) => setCreditsDraft(e.target.value)}
                 onBlur={commitCredits}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.currentTarget.blur();
-                  }
-                }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                 onTouchStart={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 aria-label="Credits"
-                title="Credit hours for this course"
                 style={{
-                  padding: isMobile ? "6px 6px" : "8px 8px",
+                  width: 52,
+                  padding: "6px 4px",
                   borderRadius: 6,
-                  minHeight: compactHeight,
-                  width: 60,
-                  fontSize: isMobile ? 14 : 16,
+                  fontSize: 14,
                   textAlign: "center",
                   border: "1px solid #d1d5db",
+                  minHeight: compactHeight,
                 }}
               />
             )}
           </div>
 
+          {/* Grade */}
           {isLocked ? (
-            <div
+            <span
               style={{
-                padding: isMobile ? "6px 8px" : "8px 10px",
-                borderRadius: 6,
-                minHeight: compactHeight,
-                width: isMobile ? "calc(50% - 4px)" : 90,
-                fontSize: isMobile ? 14 : 16,
+                fontSize: 14,
                 fontWeight: 700,
-                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 90px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                color: course.grade ? "#111" : "#9ca3af",
+                minWidth: 48,
                 textAlign: "center",
-                border: "1px solid #e5e7eb",
-                background: "#f9fafb",
-                color: "#111",
               }}
             >
-              {course.grade || "No Grade"}
-            </div>
+              {course.grade || "—"}
+            </span>
           ) : (
             <select
               value={course.grade || ""}
@@ -316,41 +238,34 @@ function CourseCard({
               onMouseDown={(e) => e.stopPropagation()}
               disabled={!canEditGrade}
               style={{
-                padding: isMobile ? "6px 8px" : "8px 10px",
+                padding: "6px 8px",
                 borderRadius: 6,
                 opacity: canEditGrade ? 1 : 0.5,
                 cursor: canEditGrade ? "pointer" : "not-allowed",
                 minHeight: compactHeight,
-                width: isMobile ? "calc(50% - 4px)" : "auto",
-                fontSize: isMobile ? 14 : 16,
-                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 1 auto",
+                fontSize: 14,
+                border: "1px solid #d1d5db",
               }}
             >
               <option value="">Grade</option>
               {gradeOptions.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
+                <option key={g} value={g}>{g}</option>
               ))}
             </select>
           )}
 
+          {/* Delete */}
           {!isLocked && (
             <button
               type="button"
               onTouchStart={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmOpen(true);
-              }}
+              onClick={(e) => { e.stopPropagation(); setConfirmOpen(true); }}
               aria-label="Delete course"
-              title="Delete course"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: 0,
                 width: compactHeight,
                 minWidth: compactHeight,
                 height: compactHeight,
@@ -359,10 +274,10 @@ function CourseCard({
                 background: "#dc2626",
                 color: "#fff",
                 cursor: "pointer",
-                flex: isMobile ? "0 0 auto" : "0 0 auto",
+                flexShrink: 0,
               }}
             >
-              <Trash2 size={isMobile ? 15 : 16} />
+              <Trash2 size={15} />
             </button>
           )}
         </div>
@@ -374,21 +289,8 @@ function CourseCard({
         message={`This will remove "${course.courses?.name ?? "this course"}" from the semester. This action cannot be undone.`}
         confirmLabel="Delete"
         onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => {
-          setConfirmOpen(false);
-          deleteCourse(course.id);
-        }}
+        onConfirm={() => { setConfirmOpen(false); deleteCourse(course.id); }}
       />
     </>
   );
 }
-
-export default memo(
-  CourseCard,
-  (prevProps, nextProps) =>
-    prevProps.course === nextProps.course &&
-    prevProps.semesterStatus === nextProps.semesterStatus &&
-    prevProps.isLocked === nextProps.isLocked &&
-    prevProps.dragPreview === nextProps.dragPreview &&
-    prevProps.isMobile === nextProps.isMobile,
-);

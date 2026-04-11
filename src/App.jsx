@@ -10,6 +10,7 @@ const Errors = lazy(() => import("./utils/errors"));
 const ResetPassword = lazy(() => import("./pages/resetPass"));
 const NewPassword = lazy(() => import("./pages/NewPass"));
 const CourseRating = lazy(() => import("./pages/CourseRating"));
+const Settings = lazy(() => import("./pages/settings"));
 
 export default function App() {
   const fallback =
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/errors" element={<Errors />} />
           <Route path="/course/:courseId" element={<CourseRating />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>
     </Router>

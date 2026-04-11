@@ -10,7 +10,8 @@ import React, {
 import { supabase } from "../services/supabase";
 import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
-import { DndProvider as ReactDndProvider, useDragLayer } from "react-dnd";
+import { LogOut, Settings as SettingsIcon } from "lucide-react";
+import { DndProvider, useDragLayer } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
 import {
@@ -197,6 +198,7 @@ export default function Dashboard() {
     name: "",
     email: "",
     major: "",
+    studentType: "",
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -423,6 +425,7 @@ export default function Dashboard() {
             name,
             email,
             major_id,
+            student_type,
             majors (
               name
             )
@@ -492,6 +495,7 @@ export default function Dashboard() {
             name: userRow?.name || user.user_metadata?.name || "",
             email: userRow?.email || user.email || "",
             major: "",
+            studentType: userRow?.student_type || "",
           });
           setSemesters([]);
           setLoading(false);
@@ -522,6 +526,7 @@ export default function Dashboard() {
           name: userRow?.name || user.user_metadata?.name || "",
           email: userRow?.email || user.email || "",
           major: majorData?.name || "",
+          studentType: userRow?.student_type || "",
         });
 
         if (semestersError) throw semestersError;
@@ -586,6 +591,7 @@ export default function Dashboard() {
             name: user.user_metadata?.name || "",
             email: user.email || "",
             major: "",
+            studentType: "",
           });
         }
         throw profileErr;
@@ -834,6 +840,10 @@ export default function Dashboard() {
       await initialize();
     }
   }, [authUser?.id, updateSemesterById]);
+
+  const updateSemesterName = useCallback((id, name) => {
+    updateSemesterById(id, (sem) => ({ ...sem, name }));
+  }, [updateSemesterById]);
 
   async function updateSemesterStudentStatus(id, newStudentStatus) {
     if (!authUser?.id) return;
@@ -1346,7 +1356,9 @@ export default function Dashboard() {
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateGPACreditHours(allCourses, semesters);
   const { completed } = calcCredits(semesters);
-  const total = 120;
+  // Total credits required varies by student type:
+  // freshman → 120 (full degree), regular/transfer → 90 (entered with credit).
+  const total = userProfile.studentType === "freshman" ? 120 : 90;
   const electiveRows = useMemo(() => calcElectivesProgress(semesters), [semesters]);
   const electivesRemainingTotal = useMemo(
     () => electiveRows.reduce((sum, row) => sum + row.remaining, 0),
@@ -1516,24 +1528,50 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-            <button
-              onClick={handleSignOut}
-              onMouseEnter={() => setIsSignOutHovered(true)}
-              onMouseLeave={() => setIsSignOutHovered(false)}
-              style={{
-                padding: "7px 14px",
-                borderRadius: 8,
-                border: isSignOutHovered ? "1px solid #dc2626" : "1px solid #ddd",
-                background: isSignOutHovered ? "#dc2626" : "#fafafa",
-                color: isSignOutHovered ? "#fff" : "#111",
-                cursor: "pointer",
-                fontSize: 13,
-                minHeight: 40,
-                transition: "all 0.2s ease",
-              }}
-            >
-              Sign Out
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => navigate("/settings")}
+                aria-label="Settings"
+                title="Settings"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 40,
+                  height: 40,
+                  borderRadius: 8,
+                  border: "1px solid #ddd",
+                  background: "#fafafa",
+                  color: "#111",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <SettingsIcon size={18} />
+              </button>
+              <button
+                onClick={handleSignOut}
+                onMouseEnter={() => setIsSignOutHovered(true)}
+                onMouseLeave={() => setIsSignOutHovered(false)}
+                aria-label="Sign out"
+                title="Sign out"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 40,
+                  height: 40,
+                  borderRadius: 8,
+                  border: isSignOutHovered ? "1px solid #dc2626" : "1px solid #ddd",
+                  background: isSignOutHovered ? "#dc2626" : "#fafafa",
+                  color: isSignOutHovered ? "#fff" : "#111",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
           </div>
 
           {isMobile && (
@@ -1817,23 +1855,24 @@ export default function Dashboard() {
           >
             {semesters.map((sem) => (
               <SemesterCard
-                key={sem.id}
-                semester={sem}
-                userId={authUser?.id}
-                refresh={initialize}
-                updateStatus={updateSemesterStatus}
-                updateLoadMode={updateSemesterLoadMode}
-                updateLock={updateSemesterLock}
-                updateStudentStatus={updateSemesterStudentStatus}
-                updateCourse={updateCourseGrade}
-                moveCourse={moveCourse}
-                deleteCourse={deleteCourse}
-                onSidebarDrop={handleSidebarDrop}
-                isMobile={isMobile}
-                isAddCourseOpen={openAddCourseSemesterId === sem.id}
-                onToggleAddCourse={handleToggleAddCourse}
-                reviewStatsByCourseId={reviewStatsByCourseId}
-              />
+              key={sem.id}
+              semester={sem}
+              userId={authUser?.id}
+              refresh={initialize}
+              updateSemesterName={updateSemesterName}
+              updateStatus={updateSemesterStatus}
+              updateLoadMode={updateSemesterLoadMode}
+              updateLock={updateSemesterLock}
+              updateStudentStatus={updateSemesterStudentStatus}
+              updateCourse={updateCourseGrade}
+              moveCourse={moveCourse}
+              deleteCourse={deleteCourse}
+              onSidebarDrop={handleSidebarDrop}
+              isMobile={isMobile}
+              isAddCourseOpen={openAddCourseSemesterId === sem.id}
+              onToggleAddCourse={handleToggleAddCourse}
+              reviewStatsByCourseId={reviewStatsByCourseId}
+            />
             ))}
 
             <div
