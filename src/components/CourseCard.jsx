@@ -84,7 +84,7 @@ export default function CourseCard({
         cursor: isLocked ? "default" : "grab",
         transition: "transform 0.2s ease, opacity 0.2s ease",
         opacity: dragPreview ? 1 : isDragging && !isMobile ? 0 : isDragging && isMobile ? 0.3 : 1,
-        touchAction: "none",
+        touchAction: isMobile ? "pan-y" : "none",
       }}
     >
       <div
