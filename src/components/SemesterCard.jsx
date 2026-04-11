@@ -1,4 +1,5 @@
 import CourseCard from "./CourseCard";
+import ConfirmModal from "./ConfirmModal";
 import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
@@ -6,11 +7,21 @@ import Prerequisite from "../utils/errors";
 import { useState, useEffect } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
+const STUDENT_STATUS_OPTIONS = [
+  { value: "freshman", label: "Freshman" },
+  { value: "sophomore", label: "Sophomore" },
+  { value: "junior", label: "Junior" },
+  { value: "senior", label: "Senior" },
+];
+
+const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
+
 export default function SemesterCard({
   semester,
   updateStatus,
   updateLoadMode,
   updateLock,
+  updateStudentStatus,
   updateCourse,
   moveCourse,
   userId,
@@ -31,11 +42,15 @@ export default function SemesterCard({
   );
   const [savingSemesterName, setSavingSemesterName] = useState(false);
   const [deletingSemester, setDeletingSemester] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [semesterDifficulty, setSemesterDifficulty] = useState(null);
   const [missingRatings, setMissingRatings] = useState(false);
 
-  const loadMode = semester.load_mode || "normal";
+  const studentStatus = semester.student_status || "";
+  const overloadDisabled = NO_OVERLOAD_STATUSES.has(studentStatus);
+  const loadModeRaw = semester.load_mode || "normal";
+  const loadMode = overloadDisabled && loadModeRaw === "overload" ? "normal" : loadModeRaw;
   const isLocked = !!semester.is_locked;
   const canShowLockButton = semester.status === "previous";
 
@@ -48,17 +63,17 @@ export default function SemesterCard({
   const LOAD_CONFIG = {
     underload: {
       label: "Underload",
-      shortLabel: "<12",
-      targetCredits: 11,
+      shortLabel: "≤12",
+      targetCredits: 12,
     },
     normal: {
       label: "Normal",
-      shortLabel: "12-17",
+      shortLabel: "13-17",
       targetCredits: 17,
     },
     overload: {
       label: "Overload",
-      shortLabel: "18+",
+      shortLabel: "≥18",
       targetCredits: 21,
     },
   };
@@ -98,7 +113,10 @@ export default function SemesterCard({
         const avgDifficulty =
           reviews.reduce((sum, r) => sum + r.difficulty, 0) / reviews.length;
 
-        const credits = course.courses?.credits || 3;
+        const credits =
+          (course.credits != null ? Number(course.credits) : null) ||
+          course.courses?.credits ||
+          3;
 
         totalWeightedDifficulty += avgDifficulty * credits;
         totalCredits += credits;
@@ -165,6 +183,60 @@ export default function SemesterCard({
     </div>
   );
 
+  const studentStatusSelect = (
+    <div
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+      }}
+    >
+      <select
+        value={studentStatus}
+        onChange={(e) => {
+          if (isLocked) return;
+          updateStudentStatus?.(semester.id, e.target.value);
+        }}
+        disabled={isLocked}
+        aria-label="Class standing"
+        title="Class standing for this semester"
+        style={{
+          height: compactHeight,
+          padding: isMobile ? "0 30px 0 10px" : "0 32px 0 12px",
+          borderRadius: 8,
+          border: "1px solid #d1d5db",
+          background: "#fff",
+          color: studentStatus ? "#111" : "#6b7280",
+          fontSize: isMobile ? 12 : 13,
+          fontWeight: 600,
+          cursor: isLocked ? "not-allowed" : "pointer",
+          opacity: isLocked ? 0.6 : 1,
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+        }}
+      >
+        <option value="">Class</option>
+        {STUDENT_STATUS_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <span
+        style={{
+          position: "absolute",
+          right: 10,
+          pointerEvents: "none",
+          color: "#6b7280",
+          fontSize: 10,
+        }}
+      >
+        ▼
+      </span>
+    </div>
+  );
+
   const actionButtons = (
     <div
       style={{
@@ -172,10 +244,12 @@ export default function SemesterCard({
         gap: 8,
         flexWrap: "wrap",
         justifyContent: "flex-end",
+        alignItems: "center",
         width: "auto",
         flexShrink: 0,
       }}
     >
+      {studentStatusSelect}
       <button
         type="button"
         onClick={() => {
@@ -204,7 +278,7 @@ export default function SemesterCard({
       </button>
       <button
         type="button"
-        onClick={handleDeleteSemester}
+        onClick={() => setConfirmDeleteOpen(true)}
         disabled={deletingSemester}
         aria-label="Delete semester"
         title="Delete semester"
@@ -225,88 +299,6 @@ export default function SemesterCard({
       >
         <Trash2 size={isMobile ? 15 : 16} />
       </button>
-    </div>
-  );
-
-  const loadSelector = (
-    <div
-      style={{
-        width: isMobile ? "100%" : "auto",
-        minWidth: isMobile ? "100%" : 250,
-      }}
-    >
-      <div
-        style={{
-          fontSize: isMobile ? 11 : 12,
-          fontWeight: 700,
-          color: "#6b7280",
-          marginBottom: 5,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-        }}
-      >
-        Course Load
-      </div>
-      <div
-        style={{
-          position: "relative",
-          width: "100%",
-        }}
-      >
-        <select
-          value={loadMode}
-          onChange={(e) => {
-            if (isLocked) return;
-            updateLoadMode?.(semester.id, e.target.value);
-          }}
-          disabled={isLocked}
-          style={{
-            width: "100%",
-            minHeight: isMobile ? 40 : 42,
-            padding: isMobile ? "8px 38px 8px 12px" : "10px 40px 10px 14px",
-            borderRadius: 8,
-            border: "1px solid #d1d5db",
-            background: "#fff",
-            color: "#374151",
-            fontSize: isMobile ? 12 : 13,
-            fontWeight: 600,
-            cursor: isLocked ? "not-allowed" : "pointer",
-            opacity: isLocked ? 0.6 : 1,
-            appearance: "none",
-            WebkitAppearance: "none",
-            MozAppearance: "none",
-          }}
-        >
-          {Object.entries(LOAD_CONFIG).map(([mode, config]) => (
-            <option key={mode} value={mode}>
-              {config.label} ({config.shortLabel})
-            </option>
-          ))}
-        </select>
-        <span
-          style={{
-            position: "absolute",
-            top: "50%",
-            right: 14,
-            transform: "translateY(-50%)",
-            pointerEvents: "none",
-            color: "#6b7280",
-            fontSize: 12,
-          }}
-        >
-          ▼
-        </span>
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 11,
-          color: "#6b7280",
-          lineHeight: 1.3,
-        }}
-      >
-        {selectedLoad.label}: {selectedLoad.shortLabel} credits
-      </div>
     </div>
   );
 
@@ -367,11 +359,6 @@ export default function SemesterCard({
   }
 
   async function handleDeleteSemester() {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${semester.name}"? This will also delete all courses inside this semester.`,
-    );
-    if (!confirmed) return;
-
     try {
       setDeletingSemester(true);
 
@@ -384,6 +371,7 @@ export default function SemesterCard({
 
       if (error) throw error;
 
+      setConfirmDeleteOpen(false);
       await refresh();
     } catch (err) {
       console.error("Error deleting semester:", err);
@@ -538,19 +526,17 @@ export default function SemesterCard({
               )}
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                width: isMobile ? "100%" : "auto",
-                alignItems: isMobile ? "stretch" : "flex-end",
-                flex: isMobile ? "1 1 100%" : "0 0 auto",
-              }}
-            >
-              {!isMobile && actionButtons}
-              {loadSelector}
-            </div>
+            {!isMobile && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  flex: "0 0 auto",
+                }}
+              >
+                {actionButtons}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -583,15 +569,104 @@ export default function SemesterCard({
           display: "flex",
           gap: 12,
           justifyContent: "space-between",
-          flexDirection: isMobile ? "row" : "row",
+          alignItems: "center",
+          flexDirection: isMobile ? "column" : "row",
           flexWrap: "wrap",
         }}
       >
         <div>
           Total Credits: <b>{credits}</b> / <b>{targetCredits}</b>
         </div>
-        <div>
-          Load: <b>{selectedLoad.label}</b>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            position: "relative",
+          }}
+        >
+          <span style={{ fontWeight: 500 }}>Load:</span>
+          <div style={{ position: "relative" }}>
+            <select
+              value={loadMode}
+              onChange={(e) => {
+                if (isLocked) return;
+                if (overloadDisabled && e.target.value === "overload") return;
+                updateLoadMode?.(semester.id, e.target.value);
+              }}
+              disabled={isLocked}
+              aria-label="Course load"
+              style={{
+                appearance: "none",
+                WebkitAppearance: "none",
+                MozAppearance: "none",
+                padding: "6px 28px 6px 10px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                color: "#111",
+                fontSize: isMobile ? 13 : 14,
+                fontWeight: 700,
+                cursor: isLocked ? "not-allowed" : "pointer",
+                opacity: isLocked ? 0.6 : 1,
+                minHeight: 34,
+              }}
+            >
+              {Object.entries(LOAD_CONFIG).map(([mode, config]) => {
+                const disabled = mode === "overload" && overloadDisabled;
+                return (
+                  <option
+                    key={mode}
+                    value={mode}
+                    disabled={disabled}
+                    title={
+                      disabled
+                        ? "Freshmen and sophomores cannot overload"
+                        : undefined
+                    }
+                    style={disabled ? { color: "#9ca3af" } : undefined}
+                  >
+                    {config.label} ({config.shortLabel})
+                    {disabled ? " — not allowed" : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <span
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: 10,
+                transform: "translateY(-50%)",
+                pointerEvents: "none",
+                color: "#6b7280",
+                fontSize: 10,
+              }}
+            >
+              ▼
+            </span>
+          </div>
+          {overloadDisabled && (
+            <span
+              title="Freshmen and sophomores cannot overload"
+              aria-label="Freshmen and sophomores cannot overload"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: "#e5e7eb",
+                color: "#6b7280",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "help",
+              }}
+            >
+              ?
+            </span>
+          )}
         </div>
         <div>
           Semester GPA: <b>{gpa}</b>
@@ -658,6 +733,16 @@ export default function SemesterCard({
           />
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmDeleteOpen}
+        title="Delete this semester?"
+        message={`This will permanently delete "${semester.name}" and all the courses inside it. This action cannot be undone.`}
+        confirmLabel="Delete"
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDeleteSemester}
+        busy={deletingSemester}
+      />
     </div>
   );
 }

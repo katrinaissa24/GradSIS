@@ -23,9 +23,9 @@ export default function Prerequisite({
   const [recommend, setRecommend] = useState(null);
 
   const LOAD_RULES = {
-    underload: { min: 0, max: 11, label: "Underload" },
-    normal: { min: 12, max: 17, label: "Normal" },
-    overload: { min: 18, max: targetCredits, label: "Overload" },
+    underload: { min: 0, max: 12, label: "Underload" },
+    normal: { min: 13, max: 17, label: "Normal" },
+    overload: { min: 18, max: Math.max(targetCredits, 24), label: "Overload" },
   };
   const activeLoadRule = LOAD_RULES[loadMode] || LOAD_RULES.normal;
   const MIN_CREDITS = activeLoadRule.min;
@@ -103,9 +103,9 @@ export default function Prerequisite({
       setCreditWarning(
         `${activeLoadRule.label} allows up to ${MAX_CREDITS} credits. You currently have ${total}.`,
       );
-    } else if (loadMode === "underload" && total >= 12) {
+    } else if (loadMode === "underload" && total > 12) {
       setCreditWarning(
-        `Underload is for fewer than 12 credits. You currently have ${total}.`,
+        `Underload is for 12 credits or fewer. You currently have ${total}.`,
       );
     } else {
       setCreditWarning("");

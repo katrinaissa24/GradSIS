@@ -8,8 +8,9 @@ import { TouchBackend } from "react-dnd-touch-backend";
 import { MultiBackend, MouseTransition, TouchTransition } from "react-dnd-multi-backend";
 import CustomDragLayer from "../components/CustomDragLayer";
 import {
-  calculateCredits,
   calculateCumulativeGPAWithRepeats,
+  calculateGPACreditHours,
+  getCourseCredits,
 } from "../constants/gpa";
 import { autoAssignBuckets } from "../utils/autoAssignBuckets";
 import PrerequisiteSidebar from "../components/PrerequisiteSideBar";
@@ -21,7 +22,7 @@ import {
 
 const MOBILE_BREAKPOINT = 768;
 const LOAD_CONFIG = {
-  underload: { targetCredits: 11 },
+  underload: { targetCredits: 12 },
   normal: { targetCredits: 17 },
   overload: { targetCredits: 21 },
 };
@@ -114,7 +115,7 @@ export default function Dashboard() {
 
     for (const sem of semesterList) {
       for (const uc of sem.user_courses || []) {
-        const credits = uc?.courses?.credits ?? 0;
+        const credits = getCourseCredits(uc);
         total += credits;
         if (uc?.grade && PASSING_GRADES.has(uc.grade)) {
           completed += credits;
@@ -133,7 +134,7 @@ export default function Dashboard() {
       for (const uc of sem.user_courses || []) {
         if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
 
-        let credits = uc?.courses?.credits ?? 0;
+        let credits = getCourseCredits(uc);
         if (!credits) {
           if (uc.course_id === null && uc.attribute) {
             const bucket = ATTRIBUTE_TO_BUCKET[uc.attribute];
@@ -435,6 +436,45 @@ export default function Dashboard() {
     }
   }
 
+  async function updateSemesterStudentStatus(id, newStudentStatus) {
+    const normalized = newStudentStatus || null;
+
+    setSemesters((prev) =>
+      prev.map((semester) => {
+        if (semester.id !== id) return semester;
+        const next = { ...semester, student_status: normalized };
+        // If switching to a status that disallows overload, drop them to normal
+        if (
+          (normalized === "freshman" || normalized === "sophomore") &&
+          semester.load_mode === "overload"
+        ) {
+          next.load_mode = "normal";
+          next.target_credits = LOAD_CONFIG.normal.targetCredits;
+        }
+        return next;
+      }),
+    );
+
+    const updates = { student_status: normalized };
+    if (
+      (normalized === "freshman" || normalized === "sophomore") &&
+      semesters.find((s) => s.id === id)?.load_mode === "overload"
+    ) {
+      updates.load_mode = "normal";
+      updates.target_credits = LOAD_CONFIG.normal.targetCredits;
+    }
+
+    const { error } = await supabase
+      .from("user_semesters")
+      .update(updates)
+      .eq("id", id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      console.error("Failed to update student status:", error);
+    }
+  }
+
     async function updateSemesterLock(id, isLocked) {
     setSemesters((prev) =>
       prev.map((semester) =>
@@ -455,16 +495,18 @@ export default function Dashboard() {
   }
 
   async function updateCourseGrade(courseId, field, value) {
+    const normalizedValue = field === "credits" ? Number(value) || 0 : value;
+
     setSemesters((prev) =>
       prev.map((sem) => ({
         ...sem,
         user_courses: sem.user_courses.map((c) =>
-          c.id === courseId ? { ...c, [field]: value } : c,
+          c.id === courseId ? { ...c, [field]: normalizedValue } : c,
         ),
       })),
     );
 
-    const updates = { [field]: value };
+    const updates = { [field]: normalizedValue };
 
     if (field === "grade") {
       updates.status =
@@ -600,7 +642,7 @@ export default function Dashboard() {
       const targetSemCourses =
         semesters.find((s) => s.id === semesterId)?.user_courses || [];
       const currentCredits = targetSemCourses.reduce(
-        (sum, uc) => sum + (uc?.courses?.credits ?? 0),
+        (sum, uc) => sum + getCourseCredits(uc),
         0,
       );
 
@@ -616,7 +658,7 @@ export default function Dashboard() {
       const targetSemCourses =
         semesters.find((s) => s.id === semesterId)?.user_courses || [];
       const currentCredits = targetSemCourses.reduce(
-        (sum, uc) => sum + (uc?.courses?.credits ?? 0),
+        (sum, uc) => sum + getCourseCredits(uc),
         0,
       );
 
@@ -652,6 +694,7 @@ export default function Dashboard() {
       semester_id: semesterId,
       attribute: attributeToUse,
       grade: null,
+      credits: course?.credits ?? 3,
       courses: course
         ? {
             id: course.id,
@@ -872,7 +915,8 @@ export default function Dashboard() {
 
   const allCourses = semesters.flatMap((s) => s.user_courses || []);
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
-  const totalHours = calculateCredits(allCourses);
+  // GPA quality hours: only the latest graded attempts that contribute to GPA
+  const totalHours = calculateGPACreditHours(allCourses, semesters);
   const { completed } = calcCredits(semesters);
   const total = 120;
   const electiveRows = calcElectivesProgress(semesters);
@@ -1362,6 +1406,7 @@ const DND_OPTIONS = {
               updateStatus={updateSemesterStatus}
               updateLoadMode={updateSemesterLoadMode}
               updateLock={updateSemesterLock}
+              updateStudentStatus={updateSemesterStudentStatus}
               updateCourse={updateCourseGrade}
               moveCourse={moveCourse}
               deleteCourse={deleteCourse}
