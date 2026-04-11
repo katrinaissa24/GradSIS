@@ -853,7 +853,7 @@ export default function Dashboard() {
     }
   }
 
-    async function updateSemesterLock(id, isLocked) {
+  const updateSemesterLock = useCallback(async (id, isLocked) => {
     setSemesters((prev) =>
       prev.map((semester) =>
         semester.id === id ? { ...semester, is_locked: isLocked } : semester,
@@ -872,7 +872,7 @@ export default function Dashboard() {
     }
   }, [authUser?.id, initialize, updateSemesterById]);
 
-  async function updateCourseGrade(courseId, field, value) {
+  const updateCourseGrade = useCallback(async (courseId, field, value) => {
     const normalizedValue = field === "credits" ? Number(value) || 0 : value;
 
     setSemesters((prev) =>

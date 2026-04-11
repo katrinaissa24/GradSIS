@@ -16,7 +16,7 @@ const STUDENT_STATUS_OPTIONS = [
 
 const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
 
-export default function SemesterCard({
+function SemesterCard({
   semester,
   updateStatus,
   updateLoadMode,
@@ -525,22 +525,30 @@ export default function SemesterCard({
                     minWidth: 0,
                   }}
                 >
-                  {isLocked ? "Unlock" : "Lock"}
-                </button>
-              )}
-            </div>
+                  {statusButtons}
 
-            {!isMobile && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  flex: "0 0 auto",
-                }}
-              >
-                {actionButtons}
+                  {canShowLockButton && (
+                    <button
+                      type="button"
+                      onClick={() => updateLock?.(semester.id, !isLocked)}
+                      style={{
+                        padding: isMobile ? "6px 10px" : "7px 12px",
+                        borderRadius: 8,
+                        border: `1px solid ${isLocked ? "#2563eb" : "#111"}`,
+                        background: isLocked ? "#2563eb" : "#fff",
+                        color: isLocked ? "#fff" : "#111",
+                        cursor: "pointer",
+                        fontSize: isMobile ? 12 : 13,
+                        minHeight: isMobile ? 34 : 36,
+                        width: "fit-content",
+                      }}
+                    >
+                      {isLocked ? "Unlock" : "Lock"}
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
+            </div>
           </>
         )}
       </div>
