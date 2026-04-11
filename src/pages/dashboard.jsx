@@ -10,10 +10,14 @@ import React, {
 import { supabase } from "../services/supabase";
 import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
-import { DndProvider, useDragLayer } from "react-dnd";
+import { DndProvider as ReactDndProvider, useDragLayer } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
-import { MultiBackend, MouseTransition, TouchTransition } from "react-dnd-multi-backend";
+import {
+  DndProvider as MultiDndProvider,
+  MouseTransition,
+  TouchTransition,
+} from "react-dnd-multi-backend";
 import {
   calculateCumulativeGPAWithRepeats,
   calculateGPACreditHours,
@@ -52,6 +56,21 @@ const DND_OPTIONS = {
 const EMPTY_DASHBOARD_REVIEW_STATS = {};
 const dashboardReviewStatsCache = new Map();
 const pendingDashboardReviewStats = new Set();
+const PASSING_GRADES = new Set([
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "PASS",
+]);
 
 function buildDashboardReviewStatsLookup(courseIds, reviews) {
   const groupedStats = (reviews || []).reduce((acc, review) => {
@@ -236,6 +255,27 @@ export default function Dashboard() {
     });
   }, [updateSemesterList]);
 
+  const allCourses = useMemo(
+    () => semesters.flatMap((semester) => semester.user_courses || []),
+    [semesters],
+  );
+
+  const passedCourseIds = useMemo(
+    () =>
+      new Set(
+        allCourses
+          .filter((course) => course?.grade && PASSING_GRADES.has(course.grade))
+          .map((course) => course.course_id)
+          .filter(Boolean),
+      ),
+    [allCourses],
+  );
+
+  const enrolledCourseIds = useMemo(
+    () => new Set(allCourses.map((course) => course.course_id).filter(Boolean)),
+    [allCourses],
+  );
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
@@ -250,22 +290,6 @@ export default function Dashboard() {
       return semesterId;
     });
   }, []);
-
-  const PASSING_GRADES = new Set([
-    "A+",
-    "A",
-    "A-",
-    "B+",
-    "B",
-    "B-",
-    "C+",
-    "C",
-    "C-",
-    "D+",
-    "D",
-    "D-",
-    "PASS",
-  ]);
 
   const ELECTIVE_REQUIREMENTS = {
     "English Communication": 6,
@@ -285,7 +309,7 @@ export default function Dashboard() {
     "Cultures & Histories": "Cultures and Histories",
     "Societies & Individuals": "Societies and Individuals",
     "Understanding the World": "Understanding the World",
-    "Technical Elective": "Technical Elective",   
+    "Technical Elective": "Technical Elective",
     CEL: "Community Engaged Learning",
   };
 
@@ -360,7 +384,6 @@ export default function Dashboard() {
         isExact,
         isOver,
         isUnder,
-        // isComplete now means "exactly meets the requirement" (used for export gating)
         isComplete: isExact,
       };
     });
@@ -406,6 +429,7 @@ export default function Dashboard() {
           `)
           .eq("id", userId)
           .single();
+
         const plansPromise = supabase
           .from("plans")
           .select("*")
@@ -433,7 +457,6 @@ export default function Dashboard() {
         const hasPlanB = safePlans.some((p) => p.name === "Plan B");
 
         const plansToCreate = [];
-
         if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
         if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
 
@@ -444,7 +467,6 @@ export default function Dashboard() {
             .select();
 
           if (createError) throw createError;
-
           safePlans = [...safePlans, ...createdPlans];
         }
         profiler.step("ensure-plans");
@@ -511,15 +533,13 @@ export default function Dashboard() {
         if (semesterIds.length > 0) {
           const { data: fetchedCourses, error: coursesError } = await supabase
             .from("user_courses")
-            .select(
-              `
+            .select(`
               *,
               courses (
                 id, name, code, number, credits,
                 course_eligible_attributes ( attribute )
               )
-            `,
-            )
+            `)
             .in("semester_id", semesterIds);
 
           if (coursesError) throw coursesError;
@@ -585,12 +605,10 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from("courses")
-        .select(
-          `
-        id, code, number, name, credits,req_sem,
-        course_eligible_attributes ( attribute )
-      `,
-        )
+        .select(`
+          id, code, number, name, credits, req_sem,
+          course_eligible_attributes ( attribute )
+        `)
         .order("code", { ascending: true });
       profiler.step("courses");
 
@@ -732,6 +750,7 @@ export default function Dashboard() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
   useEffect(() => {
     if (!semesters.length) {
       setMobileQuickAddSemesterId("");
@@ -762,11 +781,10 @@ export default function Dashboard() {
   }, [hasLoadedPrerequisiteCourses, isMobile, mobileCatalogOpen, sidebarOpen]);
 
   const updateSemesterStatus = useCallback(async (id, newStatus) => {
-    updateSemesterById(id, (semester) => {
-      if (semester.status === newStatus) {
-        return semester;
-      }
+    if (!authUser?.id) return;
 
+    updateSemesterById(id, (semester) => {
+      if (semester.status === newStatus) return semester;
       return { ...semester, status: newStatus };
     });
 
@@ -780,9 +798,11 @@ export default function Dashboard() {
       console.error("Failed to update semester status:", error);
       await initialize();
     }
-  }, [authUser?.id, initialize, updateSemesterById]);
+  }, [authUser?.id, updateSemesterById]);
 
   const updateSemesterLoadMode = useCallback(async (id, newLoadMode) => {
+    if (!authUser?.id) return;
+
     const targetCredits = LOAD_CONFIG[newLoadMode]?.targetCredits ?? 17;
 
     updateSemesterById(id, (semester) => {
@@ -813,16 +833,17 @@ export default function Dashboard() {
       console.error("Failed to update semester load mode:", error);
       await initialize();
     }
-  }, [authUser?.id, initialize, updateSemesterById]);
+  }, [authUser?.id, updateSemesterById]);
 
   async function updateSemesterStudentStatus(id, newStudentStatus) {
+    if (!authUser?.id) return;
+
     const normalized = newStudentStatus || null;
 
     setSemesters((prev) =>
       prev.map((semester) => {
         if (semester.id !== id) return semester;
         const next = { ...semester, student_status: normalized };
-        // If switching to a status that disallows overload, drop them to normal
         if (
           (normalized === "freshman" || normalized === "sophomore") &&
           semester.load_mode === "overload"
@@ -855,6 +876,8 @@ export default function Dashboard() {
   }
 
   const updateSemesterLock = useCallback(async (id, isLocked) => {
+    if (!authUser?.id) return;
+
     setSemesters((prev) =>
       prev.map((semester) =>
         semester.id === id ? { ...semester, is_locked: isLocked } : semester,
@@ -871,7 +894,7 @@ export default function Dashboard() {
       console.error("Failed to update semester lock:", error);
       await initialize();
     }
-  }, [authUser?.id, initialize, updateSemesterById]);
+  }, [authUser?.id]);
 
   const updateCourseGrade = useCallback(async (courseId, field, value) => {
     const normalizedValue = field === "credits" ? Number(value) || 0 : value;
@@ -900,9 +923,11 @@ export default function Dashboard() {
     if (error) {
       console.error("Failed to update course:", error);
     }
-  }, [updateSemesterContainingCourse]);
+  }, []);
 
-  const moveCourse = useCallback((courseId, fromSemesterId, toSemesterId) => {
+  const moveCourse = useCallback(async (courseId, fromSemesterId, toSemesterId) => {
+    if (fromSemesterId === toSemesterId) return;
+
     updateSemesterList((prev) => {
       let movedCourse = null;
       let changed = false;
@@ -921,8 +946,6 @@ export default function Dashboard() {
             changed = true;
             return { ...sem, user_courses: remaining };
           }
-
-          return sem;
         }
         return sem;
       });
@@ -932,8 +955,7 @@ export default function Dashboard() {
       }
 
       return updated.map((sem) => {
-        if (sem.id === toSemesterId && movedCourse) {
-          changed = true;
+        if (sem.id === toSemesterId) {
           return {
             ...sem,
             user_courses: [
@@ -945,7 +967,17 @@ export default function Dashboard() {
         return sem;
       });
     });
-  }, [updateSemesterList]);
+
+    const { error } = await supabase
+      .from("user_courses")
+      .update({ semester_id: toSemesterId })
+      .eq("id", courseId);
+
+    if (error) {
+      console.error("Failed to move course:", error);
+      await initialize(true, selectedPlanId);
+    }
+  }, [selectedPlanId, updateSemesterList]);
 
   const deleteCourse = useCallback(async (courseId) => {
     updateSemesterContainingCourse(courseId, (semester) => {
@@ -971,13 +1003,23 @@ export default function Dashboard() {
       return;
     }
 
+    if (!authUser?.id) {
+      alert("User session not ready. Please refresh and try again.");
+      return;
+    }
+
+    const targetSemester = semesters.find((s) => s.id === semesterId);
+    const targetSemCourses = targetSemester?.user_courses || [];
+
     if (course) {
-      const targetSem = semesters.find((s) => s.id === semesterId);
-      const alreadyEnrolledInThisSemester = targetSem?.user_courses?.some(
-        (uc) => uc.course_id === course.id && uc.semester_id === semesterId,
+      const alreadyInTargetSemester = targetSemCourses.some(
+        (userCourse) => userCourse.course_id === course.id,
       );
 
-      if (alreadyEnrolledInThisSemester) return;
+      if (alreadyInTargetSemester) {
+        alert("This course is already added in this semester.");
+        return;
+      }
 
       const { data: prereqs, error: prereqError } = await supabase
         .from("prerequisites")
@@ -990,16 +1032,26 @@ export default function Dashboard() {
       }
 
       if (prereqs?.length > 0) {
-        const { data: enrolledData } = await supabase
-          .from("user_courses")
-          .select("course_id")
-          .eq("user_id", authUser.id);
-        const enrolledCourseIds = (enrolledData || [])
-          .map((uc) => uc.course_id)
-          .filter(Boolean);
+        const { data: freshUserCourses, error: freshUserCoursesError } =
+          await supabase
+            .from("user_courses")
+            .select("course_id, grade")
+            .eq("user_id", authUser.id);
+
+        if (freshUserCoursesError) {
+          alert("Error checking completed courses.");
+          return;
+        }
+
+        const freshPassedCourseIds = new Set(
+          (freshUserCourses || [])
+            .filter((c) => PASSING_GRADES.has(c.grade))
+            .map((c) => c.course_id)
+            .filter(Boolean),
+        );
 
         const missing = prereqs.filter(
-          (p) => !enrolledCourseIds.includes(p.prereq_course_id),
+          (p) => !freshPassedCourseIds.has(p.prereq_course_id),
         );
 
         if (missing.length > 0) {
@@ -1020,20 +1072,12 @@ export default function Dashboard() {
         }
       }
 
-      const targetSemNumber = targetSem?.semester_number;
-      console.log(
-        "req_sem:",
-        course.req_sem,
-        "targetSemNumber:",
-        targetSemNumber,
-      );
-      if (course.req_sem && targetSemNumber !== course.req_sem) {
-        alert(`This course must be taken in semester ${course.req_sem}.`);
+      const targetSemNumber = targetSemester?.semester_number;
+      if (course.req_sem && targetSemNumber < course.req_sem) {
+        alert(`This course is intended for semester ${course.req_sem} or later.`);
         return;
       }
 
-      const targetSemCourses =
-        semesters.find((s) => s.id === semesterId)?.user_courses || [];
       const currentCredits = targetSemCourses.reduce(
         (sum, uc) => sum + getCourseCredits(uc),
         0,
@@ -1048,8 +1092,6 @@ export default function Dashboard() {
     }
 
     if (!course) {
-      const targetSemCourses =
-        semesters.find((s) => s.id === semesterId)?.user_courses || [];
       const currentCredits = targetSemCourses.reduce(
         (sum, uc) => sum + getCourseCredits(uc),
         0,
@@ -1072,7 +1114,6 @@ export default function Dashboard() {
       "Technical Elective": "Technical Elective",
       "English Communication": "Engl. Communication",
       "Arabic Communication": "Arab. Communication",
-
     };
 
     const attributeToUse =
@@ -1120,15 +1161,13 @@ export default function Dashboard() {
         grade: null,
         attribute: attributeToUse,
       })
-      .select(
-        `
+      .select(`
         *,
         courses (
           id, name, code, number, credits,
           course_eligible_attributes ( attribute )
         )
-      `,
-      )
+      `)
       .single();
 
     if (error) {
@@ -1304,16 +1343,7 @@ export default function Dashboard() {
     );
   }, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
 
-  const allCourses = useMemo(
-    () => semesters.flatMap((semester) => semester.user_courses || []),
-    [semesters],
-  );
-  const enrolledCourseIds = useMemo(
-    () => new Set(allCourses.map((course) => course.course_id).filter(Boolean)),
-    [allCourses],
-  );
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
-  // GPA quality hours: only the latest graded attempts that contribute to GPA
   const totalHours = calculateGPACreditHours(allCourses, semesters);
   const { completed } = calcCredits(semesters);
   const total = 120;
@@ -1323,6 +1353,7 @@ export default function Dashboard() {
     [electiveRows],
   );
   const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
+
   const mobileElectivesPanel =
     isMobile && mobileElectivesOpen ? (
       <div style={{ padding: "0 16px 16px" }}>
@@ -1405,7 +1436,7 @@ export default function Dashboard() {
   }
 
   return (
-    <DndProvider backend={MultiBackend} options={DND_OPTIONS}>
+    <DashboardDndProvider isMobile={isMobile}>
       <DragLayerHost isMobile={isMobile} />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
@@ -1668,24 +1699,22 @@ export default function Dashboard() {
             </div>
 
             {isMobile && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setMobileElectivesOpen((prev) => !prev)}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    color: "#111",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    minHeight: 44,
-                  }}
-                >
-                  {mobileElectivesOpen ? "Hide Electives" : "Show Electives"}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setMobileElectivesOpen((prev) => !prev)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #ddd",
+                  background: "#fff",
+                  color: "#111",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  minHeight: 44,
+                }}
+              >
+                {mobileElectivesOpen ? "Hide Electives" : "Show Electives"}
+              </button>
             )}
           </div>
         </div>
@@ -1788,23 +1817,23 @@ export default function Dashboard() {
           >
             {semesters.map((sem) => (
               <SemesterCard
-              key={sem.id}
-              semester={sem}
-              userId={authUser?.id}
-              refresh={initialize}
-              updateStatus={updateSemesterStatus}
-              updateLoadMode={updateSemesterLoadMode}
-              updateLock={updateSemesterLock}
-              updateStudentStatus={updateSemesterStudentStatus}
-              updateCourse={updateCourseGrade}
-              moveCourse={moveCourse}
-              deleteCourse={deleteCourse}
-              onSidebarDrop={handleSidebarDrop}
-              isMobile={isMobile}
-              isAddCourseOpen={openAddCourseSemesterId === sem.id}
-              onToggleAddCourse={handleToggleAddCourse}
-              reviewStatsByCourseId={reviewStatsByCourseId}
-            />
+                key={sem.id}
+                semester={sem}
+                userId={authUser?.id}
+                refresh={initialize}
+                updateStatus={updateSemesterStatus}
+                updateLoadMode={updateSemesterLoadMode}
+                updateLock={updateSemesterLock}
+                updateStudentStatus={updateSemesterStudentStatus}
+                updateCourse={updateCourseGrade}
+                moveCourse={moveCourse}
+                deleteCourse={deleteCourse}
+                onSidebarDrop={handleSidebarDrop}
+                isMobile={isMobile}
+                isAddCourseOpen={openAddCourseSemesterId === sem.id}
+                onToggleAddCourse={handleToggleAddCourse}
+                reviewStatsByCourseId={reviewStatsByCourseId}
+              />
             ))}
 
             <div
@@ -1892,9 +1921,7 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                >
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {electiveRows.map((row) => {
                     const ok = row.isExact;
                     return (
@@ -1945,8 +1972,16 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-    </DndProvider>
+    </DashboardDndProvider>
   );
+}
+
+function DashboardDndProvider({ children, isMobile }) {
+  if (isMobile) {
+    return <MultiDndProvider options={DND_OPTIONS}>{children}</MultiDndProvider>;
+  }
+
+  return <ReactDndProvider backend={HTML5Backend}>{children}</ReactDndProvider>;
 }
 
 function SidebarOverlay({ onClose }) {

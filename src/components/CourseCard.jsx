@@ -1,8 +1,7 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { memo, useRef, useEffect, useState } from "react";
-import { useDrag, useDrop } from "react-dnd";
+import { memo, useCallback, useRef, useEffect, useState } from "react";
+import { useDrag } from "react-dnd";
 import { Trash2 } from "lucide-react";
-import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 import { getCourseCredits } from "../constants/gpa";
@@ -19,7 +18,7 @@ function CourseCard({
 }) {
   const canEditGrade = semesterStatus === "previous" && !isLocked;
   const canDragCourse = !isLocked;
-  const ref = useRef(null);
+  const cardRef = useRef(null);
   const compactHeight = isMobile ? 40 : 44;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const courseCredits = getCourseCredits(course);
@@ -33,8 +32,9 @@ function CourseCard({
     type: "COURSE",
     canDrag: canDragCourse && !dragPreview,
     item: (monitor) => {
-      const rect = ref.current?.getBoundingClientRect();
+      const rect = cardRef.current?.getBoundingClientRect();
       const clientOffset = monitor.getClientOffset();
+
       return {
         id: course.id,
         course,
@@ -57,36 +57,36 @@ function CourseCard({
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  const [, drop] = useDrop({ accept: "COURSE" });
+  const setCardNode = useCallback((node) => {
+    cardRef.current = node;
+  }, []);
 
-  // Always attach the connector to the same DOM node so the drag/drop ref
-  // never goes stale between drags. Previously we conditionally returned a
-  // placeholder div without the ref, which caused the second drag to freeze.
-  if (!dragPreview) {
-    drag(drop(ref));
-  }
+  const setDragHandleNode = useCallback(
+    (node) => {
+      if (!node || dragPreview || isMobile) {
+        return;
+      }
 
-  async function updateField(field, value) {
+      drag(node);
+    },
+    [drag, dragPreview, isMobile],
+  );
+
+  function updateField(field, value) {
     updateCourse(course.id, field, value);
-
-    const { error } = await supabase
-      .from("user_courses")
-      .update({ [field]: value })
-      .eq("id", course.id);
-
-    if (error) {
-      console.error(`Failed to update ${field}:`, error);
-    }
   }
 
   function commitCredits() {
     let parsed = parseFloat(creditsDraft);
+
     if (!Number.isFinite(parsed) || parsed < 0) parsed = 0;
     if (parsed > 12) parsed = 12;
+
     if (parsed === courseCredits) {
       setCreditsDraft(String(courseCredits));
       return;
     }
+
     setCreditsDraft(String(parsed));
     updateField("credits", parsed);
   }
@@ -96,7 +96,7 @@ function CourseCard({
   return (
     <>
       <div
-        ref={dragPreview ? null : ref}
+        ref={dragPreview ? null : setCardNode}
         style={{
           padding: isMobile ? 10 : 12,
           borderRadius: 10,
@@ -106,18 +106,15 @@ function CourseCard({
           alignItems: isMobile ? "stretch" : "center",
           flexDirection: isMobile ? "column" : "row",
           gap: 10,
-          cursor: isLocked ? "default" : "grab",
+          cursor: isLocked ? "default" : isMobile ? "default" : "grab",
           transition: "opacity 0.15s ease",
           opacity: dragPreview
             ? 1
             : showAsHidden
-            ? 0
-            : isDragging && isMobile
-            ? 0.3
-            : 1,
-          // visibility:hidden keeps the element in the DOM (and the drag ref
-          // attached) so a second drag still works
-          visibility: showAsHidden ? "hidden" : "visible",
+              ? 0.15
+              : isDragging && isMobile
+                ? 0.3
+                : 1,
           touchAction: isMobile ? "pan-y" : "none",
         }}
       >
@@ -133,6 +130,7 @@ function CourseCard({
         >
           {!isLocked && (
             <div
+              ref={dragPreview || isMobile ? null : setDragHandleNode}
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(2, 4px)",
@@ -158,7 +156,8 @@ function CourseCard({
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, lineHeight: 1.35 }}>
-              {course.courses?.name ?? "Elective Slot"} ({course.courses?.code ?? "ELECTIVE"}{" "}
+              {course.courses?.name ?? "Elective Slot"} (
+              {course.courses?.code ?? "ELECTIVE"}{" "}
               {course.courses?.number ?? ""})
             </div>
           </div>
@@ -170,7 +169,7 @@ function CourseCard({
             gap: 8,
             alignItems: isMobile ? "stretch" : "center",
             width: isMobile ? "100%" : "auto",
-            flexDirection: isMobile ? "row" : "row",
+            flexDirection: "row",
             flexWrap: "wrap",
             marginLeft: isMobile ? 0 : "auto",
             justifyContent: isMobile ? "flex-start" : "flex-end",
@@ -237,6 +236,7 @@ function CourseCard({
             >
               Cr
             </span>
+
             {isLocked ? (
               <div
                 style={{
