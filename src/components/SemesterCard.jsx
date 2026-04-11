@@ -4,6 +4,7 @@ import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
 import { useState, useEffect } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 
 export default function SemesterCard({
   semester,
@@ -176,46 +177,53 @@ export default function SemesterCard({
       }}
     >
       <button
+        type="button"
         onClick={() => {
           if (isLocked) return;
           setIsEditingSemesterName(true);
         }}
         disabled={isLocked}
+        aria-label="Rename semester"
+        title={isLocked ? "Unlock this semester to rename it" : "Rename semester"}
         style={{
-          padding: compactPadding,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: compactHeight,
+          minWidth: compactHeight,
+          height: compactHeight,
           borderRadius: 8,
           border: "1px solid #ddd",
           background: "#fff",
           cursor: isLocked ? "not-allowed" : "pointer",
           opacity: isLocked ? 0.6 : 1,
-          fontSize: isMobile ? 12 : 13,
-          minHeight: compactHeight,
+          color: "#374151",
         }}
       >
-        Rename
+        <Pencil size={isMobile ? 15 : 16} />
       </button>
       <button
+        type="button"
         onClick={handleDeleteSemester}
-        disabled={deletingSemester || semester.status !== "future"}
+        disabled={deletingSemester}
+        aria-label="Delete semester"
+        title="Delete semester"
         style={{
-          padding: compactPadding,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: compactHeight,
+          minWidth: compactHeight,
+          height: compactHeight,
           borderRadius: 8,
           border: "none",
-          background:
-            semester.status === "future" ? "#dc2626" : "#d1d5db",
-          color: semester.status === "future" ? "#fff" : "#6b7280",
-          cursor:
-            semester.status === "future" ? "pointer" : "not-allowed",
-          fontSize: isMobile ? 12 : 13,
+          background: "#dc2626",
+          color: "#fff",
+          cursor: deletingSemester ? "progress" : "pointer",
           opacity: deletingSemester ? 0.7 : 1,
-          minHeight: compactHeight,
         }}
       >
-        {deletingSemester
-          ? "Deleting..."
-          : semester.status === "future"
-            ? "Delete"
-            : "Cannot Delete"}
+        <Trash2 size={isMobile ? 15 : 16} />
       </button>
     </div>
   );
@@ -359,10 +367,8 @@ export default function SemesterCard({
   }
 
   async function handleDeleteSemester() {
-    if (semester.status !== "future") return;
-
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${semester.name}"?`,
+      `Are you sure you want to delete "${semester.name}"? This will also delete all courses inside this semester.`,
     );
     if (!confirmed) return;
 
