@@ -3,10 +3,10 @@ import { calculateSemesterGPA, calculateCredits } from "../constants/gpa";
 import { useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import Prerequisite from "../utils/errors";
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
-export default function SemesterCard({
+function SemesterCard({
   semester,
   updateStatus,
   updateLoadMode,
@@ -20,6 +20,7 @@ export default function SemesterCard({
   isMobile = false,
   isAddCourseOpen = false,
   onToggleAddCourse,
+  reviewStatsByCourseId = {},
 }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
@@ -72,43 +73,29 @@ export default function SemesterCard({
   };
 
   useEffect(() => {
-    async function calculateDifficulty() {
+    function calculateDifficulty() {
       if (!semester.user_courses.length) return;
-
-      const courseIds = semester.user_courses
-        .map((c) => c.course_id)
-        .filter(Boolean);
-
-      if (!courseIds.length) {
-        setSemesterDifficulty(null);
-        setMissingRatings(true);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("course_reviews")
-        .select("course_id, difficulty")
-        .in("course_id", courseIds);
 
       let totalWeightedDifficulty = 0;
       let totalCredits = 0;
-
       let missing = false;
 
-      semester.user_courses.forEach(course => {
-        const reviews = data?.filter(r => r.course_id === course.course_id) || [];
-
-        if (reviews.length === 0) {
+      semester.user_courses.forEach((course) => {
+        if (!course.course_id) {
           missing = true;
           return;
         }
 
-        const avgDifficulty =
-          reviews.reduce((sum, r) => sum + r.difficulty, 0) / reviews.length;
+        const stats = reviewStatsByCourseId[course.course_id];
+
+        if (!stats || stats.avgDifficulty == null) {
+          missing = true;
+          return;
+        }
 
         const credits = course.courses?.credits || 3;
 
-        totalWeightedDifficulty += avgDifficulty * credits;
+        totalWeightedDifficulty += stats.avgDifficulty * credits;
         totalCredits += credits;
       });
 
@@ -124,11 +111,11 @@ export default function SemesterCard({
         setSemesterDifficulty(null);
       }
 
-      setMissingRatings(missing || data.length === 0);
+      setMissingRatings(missing);
     }
 
     calculateDifficulty();
-  }, [semester.user_courses]);
+  }, [semester.user_courses, reviewStatsByCourseId]);
 
   const statusButtons = (
     <div
@@ -697,3 +684,13 @@ export default function SemesterCard({
     </div>
   );
 }
+
+export default memo(
+  SemesterCard,
+  (prevProps, nextProps) =>
+    prevProps.semester === nextProps.semester &&
+    prevProps.isMobile === nextProps.isMobile &&
+    prevProps.isAddCourseOpen === nextProps.isAddCourseOpen &&
+    prevProps.reviewStatsByCourseId === nextProps.reviewStatsByCourseId &&
+    prevProps.userId === nextProps.userId,
+);

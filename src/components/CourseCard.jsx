@@ -1,11 +1,11 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { useRef, useEffect } from "react";
+import { memo, useRef, useEffect } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { supabase } from "../services/supabase";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 
-export default function CourseCard({
+function CourseCard({
   course,
   semesterStatus,
   isLocked = false,
@@ -265,3 +265,13 @@ export default function CourseCard({
     </div>
   );
 }
+
+export default memo(
+  CourseCard,
+  (prevProps, nextProps) =>
+    prevProps.course === nextProps.course &&
+    prevProps.semesterStatus === nextProps.semesterStatus &&
+    prevProps.isLocked === nextProps.isLocked &&
+    prevProps.dragPreview === nextProps.dragPreview &&
+    prevProps.isMobile === nextProps.isMobile,
+);

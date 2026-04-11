@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabase";
 import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
@@ -27,11 +27,25 @@ const LOAD_CONFIG = {
   overload: { targetCredits: 21 },
 };
 
+const DND_OPTIONS = {
+  backends: [
+    { id: "html5", backend: HTML5Backend, transition: MouseTransition },
+    {
+      id: "touch",
+      backend: TouchBackend,
+      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
+      preview: true,
+      transition: TouchTransition,
+    },
+  ],
+};
+
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
   const [semesters, setSemesters] = useState([]);
   const [prerequisiteCourses, setPrerequisiteCourses] = useState([]);
+  const [hasLoadedPrerequisiteCourses, setHasLoadedPrerequisiteCourses] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [addingSemester, setAddingSemester] = useState(false);
@@ -59,6 +73,8 @@ export default function Dashboard() {
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
+  const skipNextPlanReloadRef = useRef(false);
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -66,7 +82,7 @@ export default function Dashboard() {
     navigate("/auth");
   }
 
-  function handleToggleAddCourse(semesterId, shouldOpen) {
+  const handleToggleAddCourse = useCallback((semesterId, shouldOpen) => {
     setOpenAddCourseSemesterId((currentId) => {
       if (!shouldOpen) {
         return currentId === semesterId ? null : currentId;
@@ -74,7 +90,7 @@ export default function Dashboard() {
 
       return semesterId;
     });
-  }
+  }, []);
 
   const PASSING_GRADES = new Set([
     "A+",
@@ -205,11 +221,24 @@ export default function Dashboard() {
       const userId = user.id;
 
       try {
-        const { data: userRow } = await supabase
+        const userProfilePromise = supabase
           .from("users")
           .select("name, email, major_id")
           .eq("id", userId)
           .single();
+        const plansPromise = supabase
+          .from("plans")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
+
+        const [
+          { data: userRow, error: userRowError },
+          { data: fetchedPlans, error: plansError },
+        ] = await Promise.all([userProfilePromise, plansPromise]);
+
+        if (userRowError) throw userRowError;
+        if (plansError) throw plansError;
 
         let majorName = "";
         if (userRow?.major_id) {
@@ -226,108 +255,108 @@ export default function Dashboard() {
           email: userRow?.email || user.email || "",
           major: majorName,
         });
+
+        let safePlans = fetchedPlans || [];
+
+        const hasPlanA = safePlans.some((p) => p.name === "Plan A");
+        const hasPlanB = safePlans.some((p) => p.name === "Plan B");
+
+        const plansToCreate = [];
+
+        if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
+        if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
+
+        if (plansToCreate.length > 0) {
+          const { data: createdPlans, error: createError } = await supabase
+            .from("plans")
+            .insert(plansToCreate)
+            .select();
+
+          if (createError) throw createError;
+
+          safePlans = [...safePlans, ...createdPlans];
+        }
+
+        setPlans(safePlans);
+
+        let activePlanId = planIdOverride || selectedPlanId;
+
+        if (!activePlanId && safePlans.length > 0) {
+          activePlanId = safePlans[0].id;
+          skipNextPlanReloadRef.current = true;
+          setSelectedPlanId(activePlanId);
+        }
+
+        if (!activePlanId) {
+          setSemesters([]);
+          setLoading(false);
+          return;
+        }
+
+        const { data: userSemesters, error: semestersError } = await supabase
+          .from("user_semesters")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("plan_id", activePlanId)
+          .order("semester_number", { ascending: true });
+
+        if (semestersError) throw semestersError;
+
+        const safeSemesters = userSemesters || [];
+        const semesterIds = safeSemesters.map((s) => s.id);
+        let userCourses = [];
+
+        if (semesterIds.length > 0) {
+          const { data: fetchedCourses, error: coursesError } = await supabase
+            .from("user_courses")
+            .select(
+              `
+              *,
+              courses (
+                id, name, code, number, credits,
+                course_eligible_attributes ( attribute )
+              )
+            `,
+            )
+            .in("semester_id", semesterIds);
+
+          if (coursesError) throw coursesError;
+          userCourses = fetchedCourses || [];
+        }
+
+        const userCoursesBySemesterId = userCourses.reduce((acc, course) => {
+          if (!acc[course.semester_id]) {
+            acc[course.semester_id] = [];
+          }
+          acc[course.semester_id].push({
+            ...course,
+            courses: course.courses ?? {
+              id: null,
+              name: course.attribute,
+              code: "ELECTIVE",
+              credits: 3,
+              course_eligible_attributes: [],
+            },
+          });
+          return acc;
+        }, {});
+
+        const formattedSemesters = safeSemesters.map((sem) => ({
+          ...sem,
+          user_courses: userCoursesBySemesterId[sem.id] || [],
+        }));
+
+        setSemesters(formattedSemesters);
+        setLoading(false);
       } catch (profileErr) {
-        console.error("Failed to load user profile for export:", profileErr);
+        console.error("Failed to load dashboard data:", profileErr);
         setUserProfile({
           name: user.user_metadata?.name || "",
           email: user.email || "",
           major: "",
         });
+        throw profileErr;
       }
-
-      const { data: fetchedPlans, error: plansError } = await supabase
-        .from("plans")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: true });
-
-      if (plansError) throw plansError;
-
-      let safePlans = fetchedPlans || [];
-
-      const hasPlanA = safePlans.some((p) => p.name === "Plan A");
-      const hasPlanB = safePlans.some((p) => p.name === "Plan B");
-
-      const plansToCreate = [];
-
-      if (!hasPlanA) plansToCreate.push({ user_id: userId, name: "Plan A" });
-      if (!hasPlanB) plansToCreate.push({ user_id: userId, name: "Plan B" });
-
-      if (plansToCreate.length > 0) {
-        const { data: createdPlans, error: createError } = await supabase
-          .from("plans")
-          .insert(plansToCreate)
-          .select();
-
-        if (createError) throw createError;
-
-        safePlans = [...safePlans, ...createdPlans];
-      }
-
-      setPlans(safePlans);
-
-      let activePlanId = planIdOverride || selectedPlanId;
-
-      if (!activePlanId && safePlans.length > 0) {
-        activePlanId = safePlans[0].id;
-        setSelectedPlanId(activePlanId);
-      }
-
-      if (!activePlanId) {
-        setSemesters([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data: userSemesters, error: semestersError } = await supabase
-        .from("user_semesters")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("plan_id", activePlanId)
-        .order("semester_number", { ascending: true });
-
-      if (semestersError) throw semestersError;
-
-      const safeSemesters = userSemesters || [];
-      const semesterIds = safeSemesters.map((s) => s.id);
-      let userCourses = [];
-
-      if (semesterIds.length > 0) {
-        const { data: fetchedCourses, error: coursesError } = await supabase
-          .from("user_courses")
-          .select(
-            `
-            *,
-            courses (
-              id, name, code, number, credits,
-              course_eligible_attributes ( attribute )
-            )
-          `,
-          )
-          .in("semester_id", semesterIds);
-
-        if (coursesError) throw coursesError;
-        userCourses = fetchedCourses || [];
-      }
-
-      const formattedSemesters = safeSemesters.map((sem) => ({
-        ...sem,
-        user_courses: userCourses
-          .filter((c) => c.semester_id === sem.id)
-          .map((uc) => ({
-            ...uc,
-            courses: uc.courses ?? {
-              id: null,
-              name: uc.attribute,
-              code: "ELECTIVE",
-              credits: 3,
-              course_eligible_attributes: [],
-            },
-          })),
-      }));
-
-      setSemesters(formattedSemesters);
-      setLoading(false);
     } catch (err) {
       console.error(err);
       setLoading(false);
@@ -355,14 +384,94 @@ export default function Dashboard() {
 
   useEffect(() => {
     initialize();
-    fetchPrerequisiteCourses();
   }, []);
 
   useEffect(() => {
     if (selectedPlanId) {
+      if (skipNextPlanReloadRef.current) {
+        skipNextPlanReloadRef.current = false;
+        return;
+      }
       initialize(true, selectedPlanId);
     }
   }, [selectedPlanId]);
+
+  useEffect(() => {
+    async function loadReviewStats() {
+      const courseIds = [
+        ...new Set(
+          semesters.flatMap((semester) =>
+            (semester.user_courses || [])
+              .map((course) => course.course_id)
+              .filter(Boolean),
+          ),
+        ),
+      ];
+
+      if (!courseIds.length) {
+        setReviewStatsByCourseId({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("course_reviews")
+        .select("course_id, difficulty, would_recommend")
+        .in("course_id", courseIds);
+
+      if (error) {
+        console.error("Failed to load dashboard review stats:", error);
+        return;
+      }
+
+      const groupedStats = (data || []).reduce((acc, review) => {
+        const courseId = review.course_id;
+        if (!courseId) return acc;
+
+        if (!acc[courseId]) {
+          acc[courseId] = {
+            difficultyTotal: 0,
+            difficultyCount: 0,
+            recommendCount: 0,
+            reviewCount: 0,
+          };
+        }
+
+        acc[courseId].reviewCount += 1;
+
+        if (review.difficulty != null) {
+          acc[courseId].difficultyTotal += Number(review.difficulty);
+          acc[courseId].difficultyCount += 1;
+        }
+
+        if (review.would_recommend === true) {
+          acc[courseId].recommendCount += 1;
+        }
+
+        return acc;
+      }, {});
+
+      const nextStats = Object.fromEntries(
+        Object.entries(groupedStats).map(([courseId, stats]) => [
+          courseId,
+          {
+            avgDifficulty:
+              stats.difficultyCount > 0
+                ? stats.difficultyTotal / stats.difficultyCount
+                : null,
+            recommendPercent:
+              stats.reviewCount > 0
+                ? Math.round((stats.recommendCount / stats.reviewCount) * 100)
+                : null,
+            reviewCount: stats.reviewCount,
+          },
+        ]),
+      );
+
+      setReviewStatsByCourseId(nextStats);
+    }
+
+    loadReviewStats();
+  }, [semesters]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -394,6 +503,14 @@ export default function Dashboard() {
       setMobileElectivesOpen(false);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    const isCatalogOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
+    if (!isCatalogOpen || hasLoadedPrerequisiteCourses) return;
+
+    fetchPrerequisiteCourses();
+    setHasLoadedPrerequisiteCourses(true);
+  }, [hasLoadedPrerequisiteCourses, isMobile, mobileCatalogOpen, sidebarOpen]);
 
   async function updateSemesterStatus(id, newStatus) {
     setSemesters((prev) =>
@@ -848,7 +965,7 @@ export default function Dashboard() {
     }
   }
 
-  async function handleMobileQuickAddCourse(courseId) {
+  const handleMobileQuickAddCourse = useCallback(async (courseId) => {
     const course = prerequisiteCourses.find((entry) => entry.id === courseId);
     if (!course) return;
 
@@ -862,9 +979,9 @@ export default function Dashboard() {
       null,
       targetSemester?.target_credits ?? 15,
     );
-  }
+  }, [handleSidebarDrop, mobileQuickAddSemesterId, prerequisiteCourses, semesters]);
 
-  async function handleMobileQuickAddElective(bucket) {
+  const handleMobileQuickAddElective = useCallback(async (bucket) => {
     const targetSemester = semesters.find(
       (semester) => semester.id === mobileQuickAddSemesterId,
     );
@@ -875,30 +992,29 @@ export default function Dashboard() {
       bucket,
       targetSemester?.target_credits ?? 15,
     );
-  }
+  }, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
 
-  const allCourses = semesters.flatMap((s) => s.user_courses || []);
-  const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
-  const totalHours = calculateCredits(allCourses);
-  const { completed } = calcCredits(semesters);
-  const total = 120;
-  const electiveRows = calcElectivesProgress(semesters);
-  const electivesRemainingTotal = electiveRows.reduce(
-    (sum, row) => sum + row.remaining,
-    0,
+  const allCourses = useMemo(
+    () => semesters.flatMap((s) => s.user_courses || []),
+    [semesters],
   );
-const DND_OPTIONS = {
-  backends: [
-    { id: "html5", backend: HTML5Backend, transition: MouseTransition },
-    {
-      id: "touch",
-      backend: TouchBackend,
-      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
-      preview: true,
-      transition: TouchTransition,
-    },
-  ],
-};
+  const enrolledCourseIds = useMemo(
+    () => new Set(allCourses.map((uc) => uc.course_id).filter(Boolean)),
+    [allCourses],
+  );
+  const totalGPA = useMemo(
+    () => calculateCumulativeGPAWithRepeats(allCourses, semesters),
+    [allCourses, semesters],
+  );
+  const totalHours = useMemo(() => calculateCredits(allCourses), [allCourses]);
+  const creditSummary = useMemo(() => calcCredits(semesters), [semesters]);
+  const { completed } = creditSummary;
+  const total = 120;
+  const electiveRows = useMemo(() => calcElectivesProgress(semesters), [semesters]);
+  const electivesRemainingTotal = useMemo(
+    () => electiveRows.reduce((sum, row) => sum + row.remaining, 0),
+    [electiveRows],
+  );
   const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
   const mobileElectivesPanel =
     isMobile && mobileElectivesOpen ? (
@@ -1341,9 +1457,7 @@ const DND_OPTIONS = {
             <div style={{ flex: 1, overflowY: "auto" }}>
               <PrerequisiteSidebar
                 courses={prerequisiteCourses}
-                enrolledCourseIds={
-                  new Set(allCourses.map((uc) => uc.course_id).filter(Boolean))
-                }
+                enrolledCourseIds={enrolledCourseIds}
                 electiveRows={electiveRows}
                 allUserCourses={allCourses}
                 isMobile={isMobile}
@@ -1381,6 +1495,7 @@ const DND_OPTIONS = {
               isMobile={isMobile}
               isAddCourseOpen={openAddCourseSemesterId === sem.id}
               onToggleAddCourse={handleToggleAddCourse}
+              reviewStatsByCourseId={reviewStatsByCourseId}
             />
             ))}
 

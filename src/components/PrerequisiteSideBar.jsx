@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { memo, useState, useMemo, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
@@ -29,7 +29,11 @@ const PASSING_GRADES = new Set([
   "PASS",
 ]);
 
-export default function PrerequisiteSidebar({
+const VIRTUAL_LIST_OVERSCAN = 4;
+const COURSE_ROW_HEIGHT = 124;
+const MOBILE_COURSE_ROW_HEIGHT = 168;
+
+function PrerequisiteSidebar({
   courses = [],
   enrolledCourseIds = new Set(),
   electiveRows = [],
@@ -45,6 +49,9 @@ export default function PrerequisiteSidebar({
   const [filter, setFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("catalog");
   const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
+  const [catalogScrollTop, setCatalogScrollTop] = useState(0);
+  const [catalogViewportHeight, setCatalogViewportHeight] = useState(0);
+  const catalogListRef = useRef(null);
 
   const completedCourseIds = useMemo(() => {
     const ids = new Set();
@@ -94,6 +101,25 @@ export default function PrerequisiteSidebar({
   const availableCount = courses.filter(
     (c) => !enrolledCourseIds.has(c.id) && !completedCourseIds.has(c.id),
   ).length;
+  const courseRowHeight = isMobile ? MOBILE_COURSE_ROW_HEIGHT : COURSE_ROW_HEIGHT;
+  const visibleRowCount = Math.max(
+    1,
+    Math.ceil((catalogViewportHeight || courseRowHeight) / courseRowHeight),
+  );
+  const virtualStartIndex = Math.max(
+    0,
+    Math.floor(catalogScrollTop / courseRowHeight) - VIRTUAL_LIST_OVERSCAN,
+  );
+  const virtualEndIndex = Math.min(
+    filtered.length,
+    virtualStartIndex + visibleRowCount + VIRTUAL_LIST_OVERSCAN * 2,
+  );
+  const virtualCourses = filtered.slice(virtualStartIndex, virtualEndIndex);
+  const topSpacerHeight = virtualStartIndex * courseRowHeight;
+  const bottomSpacerHeight = Math.max(
+    0,
+    (filtered.length - virtualEndIndex) * courseRowHeight,
+  );
 
   useEffect(() => {
     async function loadReviewStats() {
@@ -172,6 +198,34 @@ export default function PrerequisiteSidebar({
 
     loadReviewStats();
   }, [courses]);
+
+  useEffect(() => {
+    setCatalogScrollTop(0);
+    if (catalogListRef.current) {
+      catalogListRef.current.scrollTop = 0;
+    }
+  }, [search, filter, activeTab]);
+
+  useEffect(() => {
+    const node = catalogListRef.current;
+    if (!node) return undefined;
+
+    const updateViewportHeight = () => {
+      setCatalogViewportHeight(node.clientHeight);
+    };
+
+    updateViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateViewportHeight);
+      return () => window.removeEventListener("resize", updateViewportHeight);
+    }
+
+    const observer = new ResizeObserver(() => updateViewportHeight());
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [activeTab, isMobile]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -365,6 +419,8 @@ export default function PrerequisiteSidebar({
           </div>
 
           <div
+            ref={catalogListRef}
+            onScroll={(e) => setCatalogScrollTop(e.currentTarget.scrollTop)}
             style={{
               flex: 1,
               overflowY: "auto",
@@ -386,18 +442,38 @@ export default function PrerequisiteSidebar({
                 No courses found
               </div>
             ) : (
-              filtered.map((course) => (
-                <DraggableCourseCard
-                  key={course.id}
-                  course={course}
-                  isEnrolled={enrolledCourseIds.has(course.id)}
-                  rating={reviewStatsByCourseId[course.id]?.rating ?? null}
-                  recommend={reviewStatsByCourseId[course.id]?.recommend ?? null}
-                  isMobile={isMobile}
-                  onQuickAdd={onQuickAddCourse}
-                  disabled={!mobileSemesterId && isMobile}
-                />
-              ))
+              <>
+                {topSpacerHeight > 0 && (
+                  <div
+                    style={{
+                      height: topSpacerHeight,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+
+                {virtualCourses.map((course) => (
+                  <DraggableCourseCard
+                    key={course.id}
+                    course={course}
+                    isEnrolled={enrolledCourseIds.has(course.id)}
+                    rating={reviewStatsByCourseId[course.id]?.rating ?? null}
+                    recommend={reviewStatsByCourseId[course.id]?.recommend ?? null}
+                    isMobile={isMobile}
+                    onQuickAdd={onQuickAddCourse}
+                    disabled={!mobileSemesterId && isMobile}
+                  />
+                ))}
+
+                {bottomSpacerHeight > 0 && (
+                  <div
+                    style={{
+                      height: bottomSpacerHeight,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>
@@ -432,6 +508,18 @@ export default function PrerequisiteSidebar({
     </div>
   );
 }
+
+export default memo(
+  PrerequisiteSidebar,
+  (prevProps, nextProps) =>
+    prevProps.courses === nextProps.courses &&
+    prevProps.enrolledCourseIds === nextProps.enrolledCourseIds &&
+    prevProps.electiveRows === nextProps.electiveRows &&
+    prevProps.allUserCourses === nextProps.allUserCourses &&
+    prevProps.isMobile === nextProps.isMobile &&
+    prevProps.mobileSemesterId === nextProps.mobileSemesterId &&
+    prevProps.semesters === nextProps.semesters,
+);
 
 function DraggableCourseCard({
   course,
