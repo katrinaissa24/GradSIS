@@ -32,6 +32,65 @@ const PASSING_GRADES = new Set([
 const VIRTUAL_LIST_OVERSCAN = 4;
 const COURSE_ROW_HEIGHT = 124;
 const MOBILE_COURSE_ROW_HEIGHT = 168;
+const EMPTY_REVIEW_STATS = {
+  rating: null,
+  recommend: null,
+};
+const catalogReviewStatsCache = new Map();
+const pendingCatalogReviewStats = new Set();
+
+function buildReviewStatsLookup(courseIds, reviews) {
+  const groupedStats = (reviews || []).reduce((acc, review) => {
+    const courseId = review.course_id;
+    if (!courseId) return acc;
+
+    if (!acc[courseId]) {
+      acc[courseId] = {
+        difficultyTotal: 0,
+        difficultyCount: 0,
+        recommendCount: 0,
+        reviewCount: 0,
+      };
+    }
+
+    acc[courseId].reviewCount += 1;
+
+    if (review.difficulty != null) {
+      acc[courseId].difficultyTotal += Number(review.difficulty);
+      acc[courseId].difficultyCount += 1;
+    }
+
+    if (review.would_recommend === true) {
+      acc[courseId].recommendCount += 1;
+    }
+
+    return acc;
+  }, {});
+
+  return Object.fromEntries(
+    courseIds.map((courseId) => {
+      const stats = groupedStats[courseId];
+
+      if (!stats || stats.reviewCount === 0) {
+        return [courseId, EMPTY_REVIEW_STATS];
+      }
+
+      return [
+        courseId,
+        {
+          rating: {
+            avg:
+              stats.difficultyCount > 0
+                ? stats.difficultyTotal / stats.difficultyCount
+                : 0,
+            count: stats.reviewCount,
+          },
+          recommend: Math.round((stats.recommendCount / stats.reviewCount) * 100),
+        },
+      ];
+    }),
+  );
+}
 
 function PrerequisiteSidebar({
   courses = [],
@@ -60,6 +119,11 @@ function PrerequisiteSidebar({
     }
     return ids;
   }, [allUserCourses]);
+  const courseIds = useMemo(
+    () => courses.map((course) => course.id).filter(Boolean),
+    [courses],
+  );
+  const courseIdsKey = useMemo(() => courseIds.join(","), [courseIds]);
 
   const filtered = useMemo(() => {
     return courses.filter((c) => {
@@ -122,82 +186,66 @@ function PrerequisiteSidebar({
   );
 
   useEffect(() => {
-    async function loadReviewStats() {
-      if (!courses.length) {
-        setReviewStatsByCourseId({});
-        return;
-      }
+    let cancelled = false;
 
-      const courseIds = courses.map((course) => course.id).filter(Boolean);
+    async function loadReviewStats() {
       if (!courseIds.length) {
         setReviewStatsByCourseId({});
         return;
       }
 
+      const cachedStats = Object.fromEntries(
+        courseIds
+          .filter((courseId) => catalogReviewStatsCache.has(courseId))
+          .map((courseId) => [courseId, catalogReviewStatsCache.get(courseId)]),
+      );
+
+      setReviewStatsByCourseId(cachedStats);
+
+      const missingCourseIds = courseIds.filter(
+        (courseId) =>
+          !catalogReviewStatsCache.has(courseId) &&
+          !pendingCatalogReviewStats.has(courseId),
+      );
+
+      if (!missingCourseIds.length) {
+        return;
+      }
+
+      missingCourseIds.forEach((courseId) => pendingCatalogReviewStats.add(courseId));
+
       const { data, error } = await supabase
         .from("course_reviews")
         .select("course_id, difficulty, would_recommend")
-        .in("course_id", courseIds);
+        .in("course_id", missingCourseIds);
 
       if (error) {
+        missingCourseIds.forEach((courseId) => pendingCatalogReviewStats.delete(courseId));
         console.error("Failed to load course review stats:", error);
         return;
       }
 
-      const groupedStats = (data || []).reduce((acc, review) => {
-        const courseId = review.course_id;
-        if (!courseId) return acc;
+      const fetchedStats = buildReviewStatsLookup(missingCourseIds, data || []);
 
-        if (!acc[courseId]) {
-          acc[courseId] = {
-            difficultyTotal: 0,
-            difficultyCount: 0,
-            recommendCount: 0,
-            reviewCount: 0,
-          };
-        }
+      missingCourseIds.forEach((courseId) => {
+        pendingCatalogReviewStats.delete(courseId);
+        catalogReviewStatsCache.set(courseId, fetchedStats[courseId] || EMPTY_REVIEW_STATS);
+      });
 
-        acc[courseId].reviewCount += 1;
+      if (cancelled) return;
 
-        if (review.difficulty != null) {
-          acc[courseId].difficultyTotal += Number(review.difficulty);
-          acc[courseId].difficultyCount += 1;
-        }
-
-        if (review.would_recommend === true) {
-          acc[courseId].recommendCount += 1;
-        }
-
-        return acc;
-      }, {});
-
-      const nextStats = Object.fromEntries(
-        Object.entries(groupedStats).map(([courseId, stats]) => [
-          courseId,
-          {
-            rating:
-              stats.reviewCount > 0
-                ? {
-                    avg:
-                      stats.difficultyCount > 0
-                        ? stats.difficultyTotal / stats.difficultyCount
-                        : 0,
-                    count: stats.reviewCount,
-                  }
-                : null,
-            recommend:
-              stats.reviewCount > 0
-                ? Math.round((stats.recommendCount / stats.reviewCount) * 100)
-                : null,
-          },
-        ]),
-      );
-
-      setReviewStatsByCourseId(nextStats);
+      setReviewStatsByCourseId((prev) => ({
+        ...prev,
+        ...fetchedStats,
+      }));
     }
 
     loadReviewStats();
-  }, [courses]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseIds, courseIdsKey]);
 
   useEffect(() => {
     setCatalogScrollTop(0);

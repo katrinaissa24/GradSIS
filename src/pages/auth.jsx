@@ -1,9 +1,7 @@
 import "./auth.css";
 import React, { useState, useEffect } from "react";
-import email_icon from "../assets/email.png";
-import password_icon from "../assets/password.png";
-import user_icon from "../assets/person.png";
-import { signUp, signIn } from "../services/auth";
+import { Mail, Lock, User } from "lucide-react";
+import { signIn } from "../services/auth";
 import { supabase } from "../services/supabase";
 import { useNavigate } from "react-router-dom";
 import { hasCompletedOnboarding } from "../utils/OnBoarding.utils";
@@ -191,7 +189,9 @@ const [selectedTermId, setSelectedTermId] = useState(null);
         <div className="inputs">
           {action === "Login" ? null : (
             <div className="input">
-              <img src={user_icon} alt="User icon" />
+              <span className="input-icon" aria-hidden="true">
+                <User size={18} strokeWidth={2.2} />
+              </span>
               <input
                 type="text"
                 placeholder="Enter your name"
@@ -203,7 +203,9 @@ const [selectedTermId, setSelectedTermId] = useState(null);
           )}
 
           <div className="input">
-            <img src={email_icon} alt="Email icon" />
+            <span className="input-icon" aria-hidden="true">
+              <Mail size={18} strokeWidth={2.2} />
+            </span>
             <input
               type="email"
               placeholder="Enter your email"
@@ -214,7 +216,9 @@ const [selectedTermId, setSelectedTermId] = useState(null);
           </div>
 
           <div className="input">
-            <img src={password_icon} alt="Password icon" />
+            <span className="input-icon" aria-hidden="true">
+              <Lock size={18} strokeWidth={2.2} />
+            </span>
             <input
               type="password"
               placeholder="Enter your password"
