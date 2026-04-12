@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase";
-const BAD_WORDS = ["fuck", "bitch", "ass", "shit", "badass"];
+const BAD_WORDS = ["fuck", "fucking", "bitch", "ass", "shit", "badass"
+   ,"asshole", "bullshit", "jackass", "dumbass", "smartass","motherfucker", "motherfucking",];
 
 function SkeletonBlock({
   height,
@@ -132,11 +133,10 @@ function CourseRatingLoadingShell() {
 
 function censorComment(text) {
   return text.replace(/\S+/g, (word) => {
-    const lower = word.toLowerCase();
-    const matched = BAD_WORDS.find((bad) => lower.includes(bad));
+    const lower = word.toLowerCase().replace(/[^a-z]/g, ""); 
+    const matched = BAD_WORDS.find((bad) => lower === bad);
     if (!matched) return word;
-    const idx = lower.indexOf(matched);
-    return word.slice(0, idx) + "*".repeat(matched.length) + word.slice(idx + matched.length);
+    return "*".repeat(word.length);
   });
 }
 function getDifficultyLabel(d) {
