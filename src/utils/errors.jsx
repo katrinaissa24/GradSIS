@@ -237,7 +237,7 @@ export default function Prerequisite({
         const { data: freshUserCourses, error: freshUserCoursesError } =
           await supabase
             .from("user_courses")
-            .select("course_id, grade")
+            .select("course_id, grade, status")
             .eq("user_id", userId);
 
         if (freshUserCoursesError) {
@@ -249,7 +249,9 @@ export default function Prerequisite({
         }
 
         const freshPassedCourseIds = (freshUserCourses || [])
-          .filter((c) => PASSED_GRADES.includes(c.grade))
+          .filter((c) => PASSED_GRADES.includes(c.grade)||
+    c.status === "enrolled" ||
+    c.status === "completed")
           .map((c) => c.course_id);
 
         const missing = prereqs.filter(
