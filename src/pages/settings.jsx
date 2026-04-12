@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Settings as SettingsIcon, ArrowLeft } from "lucide-react";
+import { LogOut, Settings as SettingsIcon, ArrowLeft, ChevronDown } from "lucide-react";
 import { supabase } from "../services/supabase";
 import {
   calculateCumulativeGPAWithRepeats,
@@ -53,6 +53,9 @@ export default function SettingsPage() {
   const [hours, setHours] = useState(0);
   const [completed, setCompleted] = useState(0);
   const [plans, setPlans] = useState([]);
+  const [majors, setMajors] = useState([]);
+  const [startingTerms, setStartingTerms] = useState([]);
+  const [savingPlan, setSavingPlan] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth <= 768 : false,
@@ -100,7 +103,7 @@ export default function SettingsPage() {
             id,
             name,
             template_id,
-            templates ( name )
+            templates ( id, name )
           `,
           )
           .eq("user_id", user.id)
@@ -111,11 +114,27 @@ export default function SettingsPage() {
           .select("id")
           .eq("user_id", user.id);
 
+        const majorsPromise = supabase
+          .from("majors")
+          .select("*")
+          .order("name", { ascending: true });
+
+        const startingTermsPromise = supabase
+          .from("starting_terms")
+          .select("*")
+          .order("name", { ascending: true });
+
         const [
           { data: userRow },
           { data: planRows },
           { data: userSemesters },
-        ] = await Promise.all([userPromise, plansPromise, semestersPromise]);
+          { data: majorsData },
+          { data: termsData },
+        ] = await Promise.all([userPromise, plansPromise, semestersPromise, majorsPromise, startingTermsPromise]);
+
+        if (cancelled) return;
+        setMajors(majorsData || []);
+        setStartingTerms(termsData || []);
 
         if (cancelled) return;
 
@@ -131,13 +150,21 @@ export default function SettingsPage() {
           studentType: userRow?.student_type || "",
         });
 
-        // Normalize plans + template name
+        // Normalize plans + template info
         const normalizedPlans = (planRows || []).map((p) => {
           const tpl = Array.isArray(p.templates) ? p.templates[0] : p.templates;
+          // Find the starting term that matches this plan's template
+          const matchingTerm = (termsData || []).find(
+            (t) => t.template_id === p.template_id
+          );
+          // Find the major associated with the template (use user's major as fallback)
           return {
             id: p.id,
             name: p.name,
+            template_id: p.template_id || null,
             templateName: tpl?.name || null,
+            startingTermId: matchingTerm?.id || null,
+            startingTermName: matchingTerm?.name || null,
           };
         });
         setPlans(normalizedPlans);
@@ -191,6 +218,136 @@ export default function SettingsPage() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
+  }
+
+  async function updatePlanTemplate(planId, newStartingTermId) {
+    if (!authUser?.id || !newStartingTermId) return;
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    if (plan.startingTermId === newStartingTermId) return;
+
+    setSavingPlan(planId);
+    try {
+      // Get the new starting term's template
+      const { data: newTerm, error: termErr } = await supabase
+        .from("starting_terms")
+        .select("template_id, name")
+        .eq("id", newStartingTermId)
+        .single();
+      if (termErr || !newTerm) throw new Error("Starting term not found");
+
+      const newTemplateId = newTerm.template_id;
+      const oldTemplateId = plan.template_id;
+
+      // Update the plan's template_id
+      const { error: planErr } = await supabase
+        .from("plans")
+        .update({ template_id: newTemplateId })
+        .eq("id", planId);
+      if (planErr) throw planErr;
+
+      // Get the plan's semesters
+      const { data: planSemesters } = await supabase
+        .from("user_semesters")
+        .select("id, semester_number")
+        .eq("plan_id", planId);
+
+      if (planSemesters && planSemesters.length > 0) {
+        const semIds = planSemesters.map((s) => s.id);
+
+        // Remove old template courses from user_courses (courses that came from the old template)
+        if (oldTemplateId) {
+          const { data: oldTemplateSemesters } = await supabase
+            .from("template_semesters")
+            .select("id")
+            .eq("template_id", oldTemplateId);
+
+          if (oldTemplateSemesters?.length) {
+            const { data: oldTemplateCourses } = await supabase
+              .from("template_courses")
+              .select("course_id")
+              .in("template_semester_id", oldTemplateSemesters.map((s) => s.id));
+
+            if (oldTemplateCourses?.length) {
+              const oldCourseIds = oldTemplateCourses.map((c) => c.course_id);
+              await supabase
+                .from("user_courses")
+                .delete()
+                .in("semester_id", semIds)
+                .in("course_id", oldCourseIds);
+            }
+          }
+        }
+
+        // Add new template courses
+        const { data: newTemplateSemesters } = await supabase
+          .from("template_semesters")
+          .select("*")
+          .eq("template_id", newTemplateId);
+
+        if (newTemplateSemesters?.length) {
+          for (const ts of newTemplateSemesters) {
+            const { data: templateCourses } = await supabase
+              .from("template_courses")
+              .select("course_id")
+              .eq("template_semester_id", ts.id);
+
+            const userSem = planSemesters.find(
+              (s) => s.semester_number === ts.semester_number
+            );
+            if (!userSem || !templateCourses?.length) continue;
+
+            const newCourses = templateCourses.map((tc, idx) => ({
+              user_id: authUser.id,
+              semester_id: userSem.id,
+              course_id: tc.course_id,
+              attribute: "Elective",
+              order_index: idx + 100, // offset to avoid conflicts
+            }));
+
+            await supabase.from("user_courses").insert(newCourses);
+          }
+        }
+
+        // Rename semesters based on new starting term
+        const [startSemName, academicYear] = newTerm.name.split(" ");
+        if (academicYear) {
+          const [startYear, endYear] = academicYear.split("-").map(Number);
+          const semesterOrder = ["Fall", "Spring", "Summer"];
+          const startIndex = semesterOrder.indexOf(startSemName);
+
+          for (const sem of planSemesters) {
+            const idx = (sem.semester_number - 1);
+            const orderIndex = startIndex + idx;
+            const semName = semesterOrder[orderIndex % 3];
+            const yearOffset = Math.floor(orderIndex / 3);
+            const name = `${semName} ${startYear + yearOffset}-${endYear + yearOffset}`;
+            await supabase
+              .from("user_semesters")
+              .update({ name })
+              .eq("id", sem.id);
+          }
+        }
+      }
+
+      // Update local state
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                template_id: newTemplateId,
+                startingTermId: newStartingTermId,
+                startingTermName: newTerm.name,
+              }
+            : p
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update plan template:", err);
+    } finally {
+      setSavingPlan(null);
+    }
   }
 
   async function updateStudentType(newType) {
@@ -418,6 +575,11 @@ export default function SettingsPage() {
 
             {/* Plans */}
             <Section title="Plans">
+              <div style={{ marginBottom: 10, color: "#6b7280", fontSize: 13 }}>
+                Choose a major and starting semester for each plan. Changing the
+                template will replace the old template's courses with the new
+                one's.
+              </div>
               {plans.length === 0 ? (
                 <div style={{ color: "#6b7280" }}>No plans yet.</div>
               ) : (
@@ -425,33 +587,92 @@ export default function SettingsPage() {
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 10,
+                    gap: 14,
                   }}
                 >
-                  {plans.map((plan) => (
-                    <div
-                      key={plan.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "12px 14px",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 10,
-                        background: "#fff",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 15 }}>
+                  {plans.map((plan) => {
+                    const isSaving = savingPlan === plan.id;
+                    return (
+                      <div
+                        key={plan.id}
+                        style={{
+                          padding: "14px 16px",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 10,
+                          background: "#fff",
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 12 }}>
                           {plan.name}
                         </div>
-                        <div style={{ fontSize: 13, color: "#6b7280" }}>
-                          Template:{" "}
-                          <b>{plan.templateName || "Not set"}</b>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: isMobile ? "column" : "row",
+                            gap: 12,
+                          }}
+                        >
+                          {/* Starting Semester selector */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 12, color: "#6b7280", display: "block", marginBottom: 4 }}>
+                              Starting Semester
+                            </label>
+                            <div style={{ position: "relative" }}>
+                              <select
+                                value={plan.startingTermId || ""}
+                                onChange={(e) => updatePlanTemplate(plan.id, e.target.value)}
+                                disabled={isSaving}
+                                style={{
+                                  width: "100%",
+                                  padding: "10px 32px 10px 12px",
+                                  borderRadius: 8,
+                                  border: "1px solid #d1d5db",
+                                  background: "#fff",
+                                  fontSize: 14,
+                                  fontWeight: 500,
+                                  cursor: isSaving ? "progress" : "pointer",
+                                  opacity: isSaving ? 0.6 : 1,
+                                  appearance: "none",
+                                  WebkitAppearance: "none",
+                                }}
+                              >
+                                <option value="">Select starting semester</option>
+                                {startingTerms.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown
+                                size={14}
+                                style={{
+                                  position: "absolute",
+                                  right: 10,
+                                  top: "50%",
+                                  transform: "translateY(-50%)",
+                                  pointerEvents: "none",
+                                  color: "#6b7280",
+                                }}
+                              />
+                            </div>
+                          </div>
                         </div>
+
+                        {plan.templateName && (
+                          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                            Template: <b>{plan.templateName}</b>
+                          </div>
+                        )}
+
+                        {isSaving && (
+                          <div style={{ marginTop: 8, fontSize: 12, color: "#2563eb" }}>
+                            Updating plan courses...
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Section>

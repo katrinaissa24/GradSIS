@@ -4,6 +4,7 @@ import { useDrop } from 'react-dnd';
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { supabase } from "../services/supabase";
+import { attributeOptions } from "../constants/attributes";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
   { bucket: "Community Engaged Learning", required: 1 },
@@ -107,6 +108,8 @@ function PrerequisiteSidebar({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [selectedAttributes, setSelectedAttributes] = useState([]);
+  const [showAttributeFilter, setShowAttributeFilter] = useState(false);
   const [activeTab, setActiveTab] = useState("catalog");
   const [reviewStatsByCourseId, setReviewStatsByCourseId] = useState({});
   const [catalogScrollTop, setCatalogScrollTop] = useState(0);
@@ -140,9 +143,14 @@ function PrerequisiteSidebar({
         filter === "all" ||
         (filter === "enrolled" && isEnrolled) ||
         (filter === "available" && !isEnrolled && !isCompleted);
-      return matchesSearch && matchesFilter;
+      const matchesAttribute =
+        selectedAttributes.length === 0 ||
+        (c.course_eligible_attributes || []).some((x) =>
+          selectedAttributes.includes(x.attribute)
+        );
+      return matchesSearch && matchesFilter && matchesAttribute;
     });
-  }, [courses, search, filter, enrolledCourseIds, completedCourseIds]);
+  }, [courses, search, filter, enrolledCourseIds, completedCourseIds, selectedAttributes]);
 
   const electiveSections = useMemo(() => {
     return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
@@ -253,7 +261,7 @@ function PrerequisiteSidebar({
     if (catalogListRef.current) {
       catalogListRef.current.scrollTop = 0;
     }
-  }, [search, filter, activeTab]);
+  }, [search, filter, activeTab, selectedAttributes]);
 
   useEffect(() => {
     const node = catalogListRef.current;
@@ -408,6 +416,132 @@ function PrerequisiteSidebar({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Attribute filter toggle */}
+          <div style={{ padding: "6px 14px 0", position: "relative" }}>
+            <button
+              onClick={() => setShowAttributeFilter((v) => !v)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: selectedAttributes.length > 0 ? "1.5px solid #2563eb" : "1px solid #e5e7eb",
+                background: selectedAttributes.length > 0 ? "#eff6ff" : "#fff",
+                color: selectedAttributes.length > 0 ? "#2563eb" : "#6b7280",
+                cursor: "pointer",
+                fontSize: 11,
+                fontWeight: selectedAttributes.length > 0 ? 600 : 400,
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+              Filter by Attribute
+              {selectedAttributes.length > 0 && (
+                <span
+                  style={{
+                    background: "#2563eb",
+                    color: "#fff",
+                    fontSize: 10,
+                    padding: "1px 5px",
+                    borderRadius: 10,
+                    fontWeight: 700,
+                  }}
+                >
+                  {selectedAttributes.length}
+                </span>
+              )}
+            </button>
+
+            {showAttributeFilter && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: "8px 0",
+                  background: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  zIndex: 20,
+                  position: "relative",
+                }}
+              >
+                {selectedAttributes.length > 0 && (
+                  <button
+                    onClick={() => setSelectedAttributes([])}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "6px 12px",
+                      fontSize: 11,
+                      color: "#dc2626",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      fontWeight: 600,
+                      borderBottom: "1px solid #f1f5f9",
+                      marginBottom: 2,
+                    }}
+                  >
+                    Clear all
+                  </button>
+                )}
+                {attributeOptions.map((attr) => {
+                  const isSelected = selectedAttributes.includes(attr);
+                  return (
+                    <button
+                      key={attr}
+                      onClick={() =>
+                        setSelectedAttributes((prev) =>
+                          isSelected
+                            ? prev.filter((a) => a !== attr)
+                            : [...prev, attr]
+                        )
+                      }
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        padding: "5px 12px",
+                        fontSize: 11,
+                        color: isSelected ? "#2563eb" : "#374151",
+                        background: isSelected ? "#eff6ff" : "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontWeight: isSelected ? 600 : 400,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 14,
+                          height: 14,
+                          borderRadius: 3,
+                          border: isSelected ? "1.5px solid #2563eb" : "1px solid #d1d5db",
+                          background: isSelected ? "#2563eb" : "#fff",
+                          color: "#fff",
+                          fontSize: 10,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isSelected && "✓"}
+                      </span>
+                      {attr}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div
