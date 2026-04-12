@@ -63,7 +63,7 @@ export default function CourseCard({
   // Callback ref pattern matches PrerequisiteSidebar's working drag setup —
   // attaches the connectors reliably whenever the DOM node mounts/changes.
   const attachDragRef = (node) => {
-    ref.current = node;
+    cardRef.current = node;
     if (!dragPreview && node) {
       drag(drop(node));
     }
