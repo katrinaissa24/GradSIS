@@ -183,11 +183,15 @@ export default function CourseRating() {
 
       const { data: enrollment } = await supabase
         .from("user_courses")
-        .select("id")
+  .select("id, user_semesters!inner(status)")
         .eq("user_id", user.id)
         .eq("course_id", courseId);
+        const hasTakenResult = (enrollment || []).some(
+  (uc) => uc.user_semesters?.status === "previous" || 
+          uc.user_semesters?.status === "present"
+);
 
-      setHasTaken(enrollment && enrollment.length > 0);
+setHasTaken(hasTakenResult);
 
       await fetchReviews(user.id);
       setLoading(false);
