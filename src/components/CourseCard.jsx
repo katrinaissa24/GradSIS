@@ -1,6 +1,7 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { memo, useCallback, useRef, useEffect, useState } from "react";
 import { useDrag } from "react-dnd";
+import { useDrop } from 'react-dnd';
 import { Trash2 } from "lucide-react";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";

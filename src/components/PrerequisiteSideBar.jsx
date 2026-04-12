@@ -1,5 +1,6 @@
 import { memo, useState, useMemo, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
+import { useDrop } from 'react-dnd';
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { supabase } from "../services/supabase";
