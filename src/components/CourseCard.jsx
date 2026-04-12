@@ -31,7 +31,7 @@ export default function CourseCard({
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: "COURSE",
-    canDrag: canDragCourse && !dragPreview,
+    canDrag: () => canDragCourse && !dragPreview,
     item: (monitor) => {
       const rect = cardRef.current?.getBoundingClientRect();
       const clientOffset = monitor.getClientOffset();

@@ -12,6 +12,7 @@ import SemesterCard from "../components/SemesterCard";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Settings as SettingsIcon } from "lucide-react";
 import { DndProvider, useDragLayer } from "react-dnd";
+import { createDragDropManager } from "dnd-core";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
 import {
@@ -2015,12 +2016,24 @@ export default function Dashboard() {
   );
 }
 
+// Stable DragDropManager that survives React 18 StrictMode double-mount.
+// Without this, StrictMode tears down the HTML5Backend event listeners on the
+// simulated unmount and the backend never re-registers them, breaking all
+// drag-and-drop on desktop.
+let _desktopDndManager = null;
+function getDesktopDndManager() {
+  if (!_desktopDndManager) {
+    _desktopDndManager = createDragDropManager(HTML5Backend);
+  }
+  return _desktopDndManager;
+}
+
 function DashboardDndProvider({ children, isMobile }) {
   if (isMobile) {
     return <MultiDndProvider options={DND_OPTIONS}>{children}</MultiDndProvider>;
   }
 
-  return <DndProvider backend={HTML5Backend}>{children}</DndProvider>;
+  return <DndProvider manager={getDesktopDndManager()}>{children}</DndProvider>;
 }
 
 function SidebarOverlay({ onClose }) {
