@@ -4,6 +4,7 @@ import {
   getCourseCredits,
 } from "../constants/gpa";
 import { supabase } from "../services/supabase";
+import * as XLSX from "xlsx";
 
 const STATUS_COLORS = {
   previous: "#f97316",
@@ -107,15 +108,26 @@ export async function computeSemesterDifficulties(semesters) {
   return result;
 }
 
+// ────────────────────────── HTML / PDF EXPORT ──────────────────────────
+
 function buildSemesterTableHtml(sem, difficultyLabelText) {
   const status = sem.status || "future";
   const headerColor = STATUS_COLORS[status] || "#6b7280";
   const courses = sem.user_courses || [];
+  const studentStatus = sem.student_status ? capitalize(sem.student_status) : "";
 
   const credits = calculateCredits(courses);
   const gpa = calculateSemesterGPA(courses);
   const loadKey = sem.load_mode || "normal";
   const loadLabel = LOAD_LABELS[loadKey] || loadKey;
+
+  const semTitle = [
+    escapeHtml(sem.name || "Semester"),
+    capitalize(status),
+    studentStatus ? studentStatus : null,
+  ]
+    .filter(Boolean)
+    .join(" &middot; ");
 
   const rows = courses
     .map(
@@ -151,7 +163,7 @@ function buildSemesterTableHtml(sem, difficultyLabelText) {
       <thead>
         <tr>
           <th colspan="5" style="background:${headerColor}; color:#ffffff; padding:10px 12px; text-align:left; font-size:14px; border:1px solid #ddd;">
-            ${escapeHtml(sem.name || "Semester")} &nbsp;&middot;&nbsp; ${escapeHtml(capitalize(status))}
+            ${semTitle}
           </th>
         </tr>
         <tr style="background:${headerColor}; color:#ffffff;">
@@ -204,11 +216,11 @@ export function buildExportHTML({
     <h1>Graduation Plan &mdash; ${escapeHtml(planTitle)}</h1>
     <div class="subtitle">Generated from GradSIS</div>
     <div class="profile">
-      <div class="profile-row"><strong>Name:</strong> ${escapeHtml(profile.name || "—")}</div>
-      <div class="profile-row"><strong>Email:</strong> ${escapeHtml(profile.email || "—")}</div>
-      <div class="profile-row"><strong>Major:</strong> ${escapeHtml(profile.major || "—")}</div>
-      <div class="profile-row"><strong>GPA:</strong> ${escapeHtml(String(profile.gpa ?? "—"))}</div>
-      <div class="profile-row"><strong>Credits Completed:</strong> ${escapeHtml(String(profile.creditsCompleted ?? "—"))} / ${escapeHtml(String(profile.totalCredits ?? "—"))}</div>
+      <div class="profile-row"><strong>Name:</strong> ${escapeHtml(profile.name || "\u2014")}</div>
+      <div class="profile-row"><strong>Email:</strong> ${escapeHtml(profile.email || "\u2014")}</div>
+      <div class="profile-row"><strong>Major:</strong> ${escapeHtml(profile.major || "\u2014")}</div>
+      <div class="profile-row"><strong>GPA:</strong> ${escapeHtml(String(profile.gpa ?? "\u2014"))}</div>
+      <div class="profile-row"><strong>Credits Completed:</strong> ${escapeHtml(String(profile.creditsCompleted ?? "\u2014"))} / ${escapeHtml(String(profile.totalCredits ?? "\u2014"))}</div>
     </div>
     ${tables}
   </body>
@@ -240,27 +252,92 @@ export function exportPlanAsPDF(args) {
   win.document.close();
 }
 
-export function exportPlanAsExcel(args) {
-  const html = buildExportHTML(args);
-  const xmlPrefix =
-    '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
-  // Strip the doctype and outer html tags from generated content so Excel reads
-  // the body cleanly inside the office namespaces.
-  const stripped = html
-    .replace(/^<!doctype html>/i, "")
-    .replace(/^<html>/i, "")
-    .replace(/<\/html>$/i, "");
-  const blob = new Blob([xmlPrefix + stripped + "</html>"], {
-    type: "application/vnd.ms-excel",
-  });
+// ────────────────────────── EXCEL EXPORT (SheetJS) ──────────────────────────
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const safeTitle = (args.planTitle || "GraduationPlan").replace(/[^a-z0-9-_]+/gi, "_");
-  a.download = `${safeTitle}_GraduationPlan.xls`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+export function exportPlanAsExcel({
+  planTitle,
+  profile,
+  semesters,
+  semesterDifficulties = {},
+}) {
+  const wb = XLSX.utils.book_new();
+  const rows = [];
+
+  // ── Profile header rows ──
+  rows.push(["Graduation Plan", planTitle || "Graduation Plan"]);
+  rows.push(["Generated from GradSIS"]);
+  rows.push([]);
+  rows.push(["Name", profile.name || "\u2014"]);
+  rows.push(["Email", profile.email || "\u2014"]);
+  rows.push(["Major", profile.major || "\u2014"]);
+  rows.push(["GPA", String(profile.gpa ?? "\u2014")]);
+  rows.push([
+    "Credits Completed",
+    `${profile.creditsCompleted ?? "\u2014"} / ${profile.totalCredits ?? "\u2014"}`,
+  ]);
+  rows.push([]);
+
+  // ── Semester tables ──
+  for (const sem of semesters) {
+    const status = sem.status || "future";
+    const studentStatus = sem.student_status ? capitalize(sem.student_status) : "";
+    const courses = sem.user_courses || [];
+    const credits = calculateCredits(courses);
+    const gpa = calculateSemesterGPA(courses);
+    const loadKey = sem.load_mode || "normal";
+    const loadLabel = LOAD_LABELS[loadKey] || loadKey;
+    const difficulty = semesterDifficulties[sem.id] || "";
+
+    // Semester title row
+    const titleParts = [
+      sem.name || "Semester",
+      capitalize(status),
+      studentStatus || null,
+    ]
+      .filter(Boolean)
+      .join(" \u00B7 ");
+    rows.push([titleParts]);
+
+    // Column headers
+    rows.push(["Code", "Course Name", "Attribute", "Credits", "Grade"]);
+
+    // Course rows
+    if (courses.length === 0) {
+      rows.push(["", "No courses", "", "", ""]);
+    } else {
+      for (const c of courses) {
+        rows.push([
+          formatCourseCode(c),
+          c.courses?.name ?? "Elective Slot",
+          c.attribute ?? "",
+          getCourseCredits(c),
+          c.grade ?? "",
+        ]);
+      }
+    }
+
+    // Summary row
+    const summaryParts = [`Total Credits: ${credits}`, `Load: ${loadLabel}`, `GPA: ${gpa}`];
+    if (difficulty) summaryParts.push(`Difficulty: ${difficulty}`);
+    rows.push([summaryParts.join("  |  ")]);
+
+    // Blank row between semesters
+    rows.push([]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Set reasonable column widths
+  ws["!cols"] = [
+    { wch: 16 }, // Code
+    { wch: 36 }, // Course Name
+    { wch: 22 }, // Attribute
+    { wch: 10 }, // Credits
+    { wch: 10 }, // Grade
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "Graduation Plan");
+
+  const safeTitle = (planTitle || "GraduationPlan").replace(/[^a-z0-9-_]+/gi, "_");
+  XLSX.writeFile(wb, `${safeTitle}_GraduationPlan.xlsx`);
 }

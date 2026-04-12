@@ -1,11 +1,11 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { memo, useCallback, useRef, useEffect, useState } from "react";
 import { useDrag } from "react-dnd";
-import { useDrop } from 'react-dnd';
 import { Trash2 } from "lucide-react";
 import { gradeOptions } from "../constants/grades";
 import { attributeOptions } from "../constants/attributes";
 import { getCourseCredits } from "../constants/gpa";
+import { supabase } from "../services/supabase";
 import ConfirmModal from "./ConfirmModal";
 
 export default function CourseCard({
@@ -58,14 +58,11 @@ export default function CourseCard({
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  const [, drop] = useDrop({ accept: "COURSE" });
-
-  // Callback ref pattern matches PrerequisiteSidebar's working drag setup —
-  // attaches the connectors reliably whenever the DOM node mounts/changes.
+  // Callback ref — attaches the drag connector reliably whenever the DOM node mounts/changes.
   const attachDragRef = (node) => {
     cardRef.current = node;
     if (!dragPreview && node) {
-      drag(drop(node));
+      drag(node);
     }
   };
 

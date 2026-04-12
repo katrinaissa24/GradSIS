@@ -96,14 +96,17 @@ export default function SettingsPage() {
           .eq("id", user.id)
           .single();
 
+        // Fetch plans with their major and starting_term associations
         const plansPromise = supabase
           .from("plans")
           .select(
             `
             id,
             name,
-            template_id,
-            templates ( id, name )
+            major_id,
+            starting_term_id,
+            majors ( id, name ),
+            starting_terms ( id, name, template_id, major_id )
           `,
           )
           .eq("user_id", user.id)
@@ -136,8 +139,6 @@ export default function SettingsPage() {
         setMajors(majorsData || []);
         setStartingTerms(termsData || []);
 
-        if (cancelled) return;
-
         const majorData = Array.isArray(userRow?.majors)
           ? userRow.majors[0]
           : userRow?.majors;
@@ -150,21 +151,18 @@ export default function SettingsPage() {
           studentType: userRow?.student_type || "",
         });
 
-        // Normalize plans + template info
+        // Normalize plans
         const normalizedPlans = (planRows || []).map((p) => {
-          const tpl = Array.isArray(p.templates) ? p.templates[0] : p.templates;
-          // Find the starting term that matches this plan's template
-          const matchingTerm = (termsData || []).find(
-            (t) => t.template_id === p.template_id
-          );
-          // Find the major associated with the template (use user's major as fallback)
+          const majorObj = Array.isArray(p.majors) ? p.majors[0] : p.majors;
+          const termObj = Array.isArray(p.starting_terms) ? p.starting_terms[0] : p.starting_terms;
           return {
             id: p.id,
             name: p.name,
-            template_id: p.template_id || null,
-            templateName: tpl?.name || null,
-            startingTermId: matchingTerm?.id || null,
-            startingTermName: matchingTerm?.name || null,
+            majorId: p.major_id || null,
+            majorName: majorObj?.name || null,
+            startingTermId: p.starting_term_id || null,
+            startingTermName: termObj?.name || null,
+            templateId: termObj?.template_id || null,
           };
         });
         setPlans(normalizedPlans);
@@ -220,7 +218,45 @@ export default function SettingsPage() {
     navigate("/auth");
   }
 
-  async function updatePlanTemplate(planId, newStartingTermId) {
+  // Update the major for a plan (clears starting_term when major changes)
+  async function updatePlanMajor(planId, newMajorId) {
+    if (!authUser?.id) return;
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    if (plan.majorId === newMajorId) return;
+
+    setSavingPlan(planId);
+    try {
+      const { error } = await supabase
+        .from("plans")
+        .update({ major_id: newMajorId || null, starting_term_id: null })
+        .eq("id", planId);
+      if (error) throw error;
+
+      const majorObj = majors.find((m) => m.id === newMajorId);
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                majorId: newMajorId || null,
+                majorName: majorObj?.name || null,
+                startingTermId: null,
+                startingTermName: null,
+                templateId: null,
+              }
+            : p,
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to update plan major:", err);
+    } finally {
+      setSavingPlan(null);
+    }
+  }
+
+  // Update the starting term for a plan (also swaps template courses)
+  async function updatePlanStartingTerm(planId, newStartingTermId) {
     if (!authUser?.id || !newStartingTermId) return;
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
@@ -231,18 +267,18 @@ export default function SettingsPage() {
       // Get the new starting term's template
       const { data: newTerm, error: termErr } = await supabase
         .from("starting_terms")
-        .select("template_id, name")
+        .select("template_id, name, major_id")
         .eq("id", newStartingTermId)
         .single();
       if (termErr || !newTerm) throw new Error("Starting term not found");
 
       const newTemplateId = newTerm.template_id;
-      const oldTemplateId = plan.template_id;
+      const oldTemplateId = plan.templateId;
 
-      // Update the plan's template_id
+      // Update the plan's starting_term_id
       const { error: planErr } = await supabase
         .from("plans")
-        .update({ template_id: newTemplateId })
+        .update({ starting_term_id: newStartingTermId })
         .eq("id", planId);
       if (planErr) throw planErr;
 
@@ -255,8 +291,8 @@ export default function SettingsPage() {
       if (planSemesters && planSemesters.length > 0) {
         const semIds = planSemesters.map((s) => s.id);
 
-        // Remove old template courses from user_courses (courses that came from the old template)
-        if (oldTemplateId) {
+        // Remove old template courses if template changed
+        if (oldTemplateId && oldTemplateId !== newTemplateId) {
           const { data: oldTemplateSemesters } = await supabase
             .from("template_semesters")
             .select("id")
@@ -279,33 +315,35 @@ export default function SettingsPage() {
           }
         }
 
-        // Add new template courses
-        const { data: newTemplateSemesters } = await supabase
-          .from("template_semesters")
-          .select("*")
-          .eq("template_id", newTemplateId);
+        // Add new template courses if template changed
+        if (!oldTemplateId || oldTemplateId !== newTemplateId) {
+          const { data: newTemplateSemesters } = await supabase
+            .from("template_semesters")
+            .select("*")
+            .eq("template_id", newTemplateId);
 
-        if (newTemplateSemesters?.length) {
-          for (const ts of newTemplateSemesters) {
-            const { data: templateCourses } = await supabase
-              .from("template_courses")
-              .select("course_id")
-              .eq("template_semester_id", ts.id);
+          if (newTemplateSemesters?.length) {
+            for (const ts of newTemplateSemesters) {
+              const { data: templateCourses } = await supabase
+                .from("template_courses")
+                .select("course_id")
+                .eq("template_semester_id", ts.id);
 
-            const userSem = planSemesters.find(
-              (s) => s.semester_number === ts.semester_number
-            );
-            if (!userSem || !templateCourses?.length) continue;
+              const userSem = planSemesters.find(
+                (s) => s.semester_number === ts.semester_number,
+              );
+              if (!userSem || !templateCourses?.length) continue;
 
-            const newCourses = templateCourses.map((tc, idx) => ({
-              user_id: authUser.id,
-              semester_id: userSem.id,
-              course_id: tc.course_id,
-              attribute: "Elective",
-              order_index: idx + 100, // offset to avoid conflicts
-            }));
+              const newCourses = templateCourses.map((tc, idx) => ({
+                user_id: authUser.id,
+                semester_id: userSem.id,
+                course_id: tc.course_id,
+                attribute: "Elective",
+                order_index: idx + 100,
+              }));
 
-            await supabase.from("user_courses").insert(newCourses);
+              await supabase.from("user_courses").insert(newCourses);
+            }
           }
         }
 
@@ -317,7 +355,7 @@ export default function SettingsPage() {
           const startIndex = semesterOrder.indexOf(startSemName);
 
           for (const sem of planSemesters) {
-            const idx = (sem.semester_number - 1);
+            const idx = sem.semester_number - 1;
             const orderIndex = startIndex + idx;
             const semName = semesterOrder[orderIndex % 3];
             const yearOffset = Math.floor(orderIndex / 3);
@@ -336,15 +374,15 @@ export default function SettingsPage() {
           p.id === planId
             ? {
                 ...p,
-                template_id: newTemplateId,
                 startingTermId: newStartingTermId,
                 startingTermName: newTerm.name,
+                templateId: newTemplateId,
               }
-            : p
-        )
+            : p,
+        ),
       );
     } catch (err) {
-      console.error("Failed to update plan template:", err);
+      console.error("Failed to update plan starting term:", err);
     } finally {
       setSavingPlan(null);
     }
@@ -510,9 +548,9 @@ export default function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Account information */}
             <Section title="Account Information">
-              <Row label="Name" value={profile.name || "—"} />
-              <Row label="Email" value={profile.email || "—"} />
-              <Row label="Major" value={profile.major || "—"} />
+              <Row label="Name" value={profile.name || "\u2014"} />
+              <Row label="Email" value={profile.email || "\u2014"} />
+              <Row label="Major" value={profile.major || "\u2014"} />
               <Row label="Minor" value={profile.minor || "None"} />
               <Row label="Cumulative GPA" value={gpa} />
               <Row
@@ -568,7 +606,7 @@ export default function SettingsPage() {
                     {STUDENT_TYPE_LABELS[profile.studentType] ||
                       profile.studentType}
                   </b>{" "}
-                  → <b>{total}</b> credits required
+                  &rarr; <b>{total}</b> credits required
                 </div>
               )}
             </Section>
@@ -577,8 +615,8 @@ export default function SettingsPage() {
             <Section title="Plans">
               <div style={{ marginBottom: 10, color: "#6b7280", fontSize: 13 }}>
                 Choose a major and starting semester for each plan. Changing the
-                template will replace the old template's courses with the new
-                one's.
+                template will replace the old template&apos;s major courses with the
+                new one&apos;s.
               </div>
               {plans.length === 0 ? (
                 <div style={{ color: "#6b7280" }}>No plans yet.</div>
@@ -592,6 +630,10 @@ export default function SettingsPage() {
                 >
                   {plans.map((plan) => {
                     const isSaving = savingPlan === plan.id;
+                    // Filter starting terms to only those matching this plan's selected major
+                    const filteredTerms = plan.majorId
+                      ? startingTerms.filter((t) => t.major_id === plan.majorId)
+                      : [];
                     return (
                       <div
                         key={plan.id}
@@ -613,15 +655,15 @@ export default function SettingsPage() {
                             gap: 12,
                           }}
                         >
-                          {/* Starting Semester selector */}
+                          {/* Major selector */}
                           <div style={{ flex: 1 }}>
                             <label style={{ fontSize: 12, color: "#6b7280", display: "block", marginBottom: 4 }}>
-                              Starting Semester
+                              Major
                             </label>
                             <div style={{ position: "relative" }}>
                               <select
-                                value={plan.startingTermId || ""}
-                                onChange={(e) => updatePlanTemplate(plan.id, e.target.value)}
+                                value={plan.majorId || ""}
+                                onChange={(e) => updatePlanMajor(plan.id, e.target.value)}
                                 disabled={isSaving}
                                 style={{
                                   width: "100%",
@@ -637,8 +679,59 @@ export default function SettingsPage() {
                                   WebkitAppearance: "none",
                                 }}
                               >
-                                <option value="">Select starting semester</option>
-                                {startingTerms.map((t) => (
+                                <option value="">Select major</option>
+                                {majors.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown
+                                size={14}
+                                style={{
+                                  position: "absolute",
+                                  right: 10,
+                                  top: "50%",
+                                  transform: "translateY(-50%)",
+                                  pointerEvents: "none",
+                                  color: "#6b7280",
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Starting Semester selector — only shows terms for selected major */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 12, color: "#6b7280", display: "block", marginBottom: 4 }}>
+                              Starting Semester
+                            </label>
+                            <div style={{ position: "relative" }}>
+                              <select
+                                value={plan.startingTermId || ""}
+                                onChange={(e) => updatePlanStartingTerm(plan.id, e.target.value)}
+                                disabled={isSaving || !plan.majorId}
+                                style={{
+                                  width: "100%",
+                                  padding: "10px 32px 10px 12px",
+                                  borderRadius: 8,
+                                  border: "1px solid #d1d5db",
+                                  background: plan.majorId ? "#fff" : "#f9fafb",
+                                  fontSize: 14,
+                                  fontWeight: 500,
+                                  cursor: isSaving || !plan.majorId ? "not-allowed" : "pointer",
+                                  opacity: isSaving ? 0.6 : !plan.majorId ? 0.5 : 1,
+                                  appearance: "none",
+                                  WebkitAppearance: "none",
+                                }}
+                              >
+                                <option value="">
+                                  {plan.majorId
+                                    ? filteredTerms.length > 0
+                                      ? "Select starting semester"
+                                      : "No terms for this major"
+                                    : "Select a major first"}
+                                </option>
+                                {filteredTerms.map((t) => (
                                   <option key={t.id} value={t.id}>
                                     {t.name}
                                   </option>
@@ -658,12 +751,6 @@ export default function SettingsPage() {
                             </div>
                           </div>
                         </div>
-
-                        {plan.templateName && (
-                          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                            Template: <b>{plan.templateName}</b>
-                          </div>
-                        )}
 
                         {isSaving && (
                           <div style={{ marginTop: 8, fontSize: 12, color: "#2563eb" }}>

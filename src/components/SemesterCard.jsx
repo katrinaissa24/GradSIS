@@ -371,22 +371,39 @@ export default function SemesterCard({
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              gap: 10,
+              alignItems: "center",
+              gap: 8,
               width: "100%",
-              minWidth: 0,
+              flexWrap: "wrap",
             }}
           >
-            {/* Top row: status buttons + lock + class + semester name + actions */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                width: "100%",
-                flexWrap: "wrap",
-              }}
-            >
+            {/* LEFT group: lock, status buttons, class, edit, trash */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", flexShrink: 0 }}>
+              {/* Lock icon button */}
+              <button
+                type="button"
+                onClick={() => updateLock?.(semester.id, !isLocked)}
+                title={isLocked ? "Unlock semester" : "Lock semester"}
+                aria-label={isLocked ? "Unlock semester" : "Lock semester"}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: isMobile ? 32 : 34,
+                  minWidth: isMobile ? 32 : 34,
+                  height: isMobile ? 32 : 34,
+                  borderRadius: 6,
+                  border: isLocked ? "1.5px solid #2563eb" : "1px solid #d1d5db",
+                  background: isLocked ? "#eff6ff" : "#fff",
+                  color: isLocked ? "#2563eb" : "#6b7280",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  flexShrink: 0,
+                }}
+              >
+                {isLocked ? <Lock size={isMobile ? 14 : 15} /> : <Unlock size={isMobile ? 14 : 15} />}
+              </button>
+
               {/* Status buttons inline */}
               {["previous", "present", "future"].map((status) => {
                 const isActive = semester.status === status;
@@ -420,12 +437,19 @@ export default function SemesterCard({
                 );
               })}
 
-              {/* Lock icon button */}
+              {/* Class selector */}
+              {studentStatusSelect}
+
+              {/* Rename button */}
               <button
                 type="button"
-                onClick={() => updateLock?.(semester.id, !isLocked)}
-                title={isLocked ? "Unlock semester" : "Lock semester"}
-                aria-label={isLocked ? "Unlock semester" : "Lock semester"}
+                onClick={() => {
+                  if (isLocked) return;
+                  setIsEditingSemesterName(true);
+                }}
+                disabled={isLocked}
+                aria-label="Rename semester"
+                title={isLocked ? "Unlock this semester to rename it" : "Rename semester"}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -434,89 +458,58 @@ export default function SemesterCard({
                   minWidth: isMobile ? 32 : 34,
                   height: isMobile ? 32 : 34,
                   borderRadius: 6,
-                  border: isLocked ? "1.5px solid #2563eb" : "1px solid #d1d5db",
-                  background: isLocked ? "#eff6ff" : "#fff",
-                  color: isLocked ? "#2563eb" : "#6b7280",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  flexShrink: 0,
+                  border: "1px solid #ddd",
+                  background: "#fff",
+                  cursor: isLocked ? "not-allowed" : "pointer",
+                  opacity: isLocked ? 0.6 : 1,
+                  color: "#374151",
                 }}
               >
-                {isLocked ? <Lock size={isMobile ? 14 : 15} /> : <Unlock size={isMobile ? 14 : 15} />}
+                <Pencil size={isMobile ? 14 : 15} />
               </button>
 
-              {/* Class selector */}
-              {studentStatusSelect}
-
-              {/* Semester name */}
-              <h3
+              {/* Delete button */}
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(true)}
+                disabled={deletingSemester}
+                aria-label="Delete semester"
+                title="Delete semester"
                 style={{
-                  fontSize: isMobile ? 16 : 18,
-                  fontWeight: 600,
-                  margin: 0,
-                  minWidth: 0,
-                  flex: "1 1 auto",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: isMobile ? 32 : 34,
+                  minWidth: isMobile ? 32 : 34,
+                  height: isMobile ? 32 : 34,
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#dc2626",
+                  color: "#fff",
+                  cursor: deletingSemester ? "progress" : "pointer",
+                  opacity: deletingSemester ? 0.7 : 1,
                 }}
               >
-                {semester.name}
-              </h3>
-
-              {/* Action buttons (rename, delete) */}
-              <div style={{ flexShrink: 0, display: "flex", gap: 6, alignItems: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isLocked) return;
-                    setIsEditingSemesterName(true);
-                  }}
-                  disabled={isLocked}
-                  aria-label="Rename semester"
-                  title={isLocked ? "Unlock this semester to rename it" : "Rename semester"}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: isMobile ? 32 : 34,
-                    minWidth: isMobile ? 32 : 34,
-                    height: isMobile ? 32 : 34,
-                    borderRadius: 6,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    cursor: isLocked ? "not-allowed" : "pointer",
-                    opacity: isLocked ? 0.6 : 1,
-                    color: "#374151",
-                  }}
-                >
-                  <Pencil size={isMobile ? 14 : 15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteOpen(true)}
-                  disabled={deletingSemester}
-                  aria-label="Delete semester"
-                  title="Delete semester"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: isMobile ? 32 : 34,
-                    minWidth: isMobile ? 32 : 34,
-                    height: isMobile ? 32 : 34,
-                    borderRadius: 6,
-                    border: "none",
-                    background: "#dc2626",
-                    color: "#fff",
-                    cursor: deletingSemester ? "progress" : "pointer",
-                    opacity: deletingSemester ? 0.7 : 1,
-                  }}
-                >
-                  <Trash2 size={isMobile ? 14 : 15} />
-                </button>
-              </div>
+                <Trash2 size={isMobile ? 14 : 15} />
+              </button>
             </div>
+
+            {/* RIGHT side: Semester name */}
+            <h3
+              style={{
+                fontSize: isMobile ? 16 : 18,
+                fontWeight: 600,
+                margin: 0,
+                minWidth: 0,
+                flex: "1 1 auto",
+                textAlign: "right",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {semester.name}
+            </h3>
           </div>
         )}
       </div>
