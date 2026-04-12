@@ -282,89 +282,111 @@ export default function SettingsPage() {
         .eq("id", planId);
       if (planErr) throw planErr;
 
-      // Get the plan's semesters
-      const { data: planSemesters } = await supabase
+      // Fetch template semesters for the new template
+      const { data: newTemplateSemesters, error: tplErr } = await supabase
+        .from("template_semesters")
+        .select("*")
+        .eq("template_id", newTemplateId)
+        .order("semester_number", { ascending: true });
+      if (tplErr) throw tplErr;
+
+      // Parse the starting term name to generate semester names (e.g. "Fall 2024-2025")
+      const [startSemName, academicYear] = newTerm.name.split(" ");
+      const [startYear, endYear] = academicYear
+        ? academicYear.split("-").map(Number)
+        : [new Date().getFullYear(), new Date().getFullYear() + 1];
+      const semesterOrder = ["Fall", "Spring", "Summer"];
+      const startIndex = semesterOrder.indexOf(startSemName);
+
+      function makeSemName(semesterNumber) {
+        const idx = semesterNumber - 1;
+        const orderIndex = startIndex + idx;
+        const name = semesterOrder[orderIndex % 3];
+        const yearOffset = Math.floor(orderIndex / 3);
+        return `${name} ${startYear + yearOffset}-${endYear + yearOffset}`;
+      }
+
+      // Get existing semesters for this plan
+      const { data: existingSemesters } = await supabase
         .from("user_semesters")
         .select("id, semester_number")
         .eq("plan_id", planId);
 
-      if (planSemesters && planSemesters.length > 0) {
+      let planSemesters = existingSemesters || [];
+
+      if (planSemesters.length === 0 && newTemplateSemesters?.length) {
+        // Plan has no semesters yet — create them from the template (same as onboarding)
+        const toInsert = newTemplateSemesters.map((ts) => ({
+          user_id: authUser.id,
+          plan_id: planId,
+          semester_number: ts.semester_number,
+          name: makeSemName(ts.semester_number),
+          status: "future",
+        }));
+
+        const { data: inserted, error: insertErr } = await supabase
+          .from("user_semesters")
+          .insert(toInsert)
+          .select();
+        if (insertErr) throw insertErr;
+        planSemesters = inserted || [];
+      } else if (planSemesters.length > 0) {
+        // Plan already has semesters — remove old template courses and rename
         const semIds = planSemesters.map((s) => s.id);
 
-        // Remove old template courses if template changed
         if (oldTemplateId && oldTemplateId !== newTemplateId) {
-          const { data: oldTemplateSemesters } = await supabase
+          const { data: oldTplSems } = await supabase
             .from("template_semesters")
             .select("id")
             .eq("template_id", oldTemplateId);
 
-          if (oldTemplateSemesters?.length) {
-            const { data: oldTemplateCourses } = await supabase
+          if (oldTplSems?.length) {
+            const { data: oldTplCourses } = await supabase
               .from("template_courses")
               .select("course_id")
-              .in("template_semester_id", oldTemplateSemesters.map((s) => s.id));
+              .in("template_semester_id", oldTplSems.map((s) => s.id));
 
-            if (oldTemplateCourses?.length) {
-              const oldCourseIds = oldTemplateCourses.map((c) => c.course_id);
+            if (oldTplCourses?.length) {
               await supabase
                 .from("user_courses")
                 .delete()
                 .in("semester_id", semIds)
-                .in("course_id", oldCourseIds);
+                .in("course_id", oldTplCourses.map((c) => c.course_id));
             }
           }
         }
 
-        // Add new template courses if template changed
-        if (!oldTemplateId || oldTemplateId !== newTemplateId) {
-          const { data: newTemplateSemesters } = await supabase
-            .from("template_semesters")
-            .select("*")
-            .eq("template_id", newTemplateId);
-
-          if (newTemplateSemesters?.length) {
-            for (const ts of newTemplateSemesters) {
-              const { data: templateCourses } = await supabase
-                .from("template_courses")
-                .select("course_id")
-                .eq("template_semester_id", ts.id);
-
-              const userSem = planSemesters.find(
-                (s) => s.semester_number === ts.semester_number,
-              );
-              if (!userSem || !templateCourses?.length) continue;
-
-              const newCourses = templateCourses.map((tc, idx) => ({
-                user_id: authUser.id,
-                semester_id: userSem.id,
-                course_id: tc.course_id,
-                attribute: "Elective",
-                order_index: idx + 100,
-              }));
-
-              await supabase.from("user_courses").insert(newCourses);
-            }
-          }
+        // Rename existing semesters to match new starting term
+        for (const sem of planSemesters) {
+          await supabase
+            .from("user_semesters")
+            .update({ name: makeSemName(sem.semester_number) })
+            .eq("id", sem.id);
         }
+      }
 
-        // Rename semesters based on new starting term
-        const [startSemName, academicYear] = newTerm.name.split(" ");
-        if (academicYear) {
-          const [startYear, endYear] = academicYear.split("-").map(Number);
-          const semesterOrder = ["Fall", "Spring", "Summer"];
-          const startIndex = semesterOrder.indexOf(startSemName);
+      // Add new template courses to each semester
+      if (newTemplateSemesters?.length && planSemesters.length > 0) {
+        for (const ts of newTemplateSemesters) {
+          const { data: templateCourses } = await supabase
+            .from("template_courses")
+            .select("course_id")
+            .eq("template_semester_id", ts.id);
 
-          for (const sem of planSemesters) {
-            const idx = sem.semester_number - 1;
-            const orderIndex = startIndex + idx;
-            const semName = semesterOrder[orderIndex % 3];
-            const yearOffset = Math.floor(orderIndex / 3);
-            const name = `${semName} ${startYear + yearOffset}-${endYear + yearOffset}`;
-            await supabase
-              .from("user_semesters")
-              .update({ name })
-              .eq("id", sem.id);
-          }
+          const userSem = planSemesters.find(
+            (s) => s.semester_number === ts.semester_number,
+          );
+          if (!userSem || !templateCourses?.length) continue;
+
+          const newCourses = templateCourses.map((tc, idx) => ({
+            user_id: authUser.id,
+            semester_id: userSem.id,
+            course_id: tc.course_id,
+            attribute: "Elective",
+            order_index: idx,
+          }));
+
+          await supabase.from("user_courses").insert(newCourses);
         }
       }
 

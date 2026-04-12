@@ -1,5 +1,5 @@
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { memo, useCallback, useRef, useEffect, useState } from "react";
+import { useCallback, useRef, useEffect, useState } from "react";
 import { useDrag } from "react-dnd";
 import { Trash2 } from "lucide-react";
 import { gradeOptions } from "../constants/grades";
@@ -58,13 +58,18 @@ export default function CourseCard({
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  // Callback ref — attaches the drag connector reliably whenever the DOM node mounts/changes.
-  const attachDragRef = (node) => {
-    cardRef.current = node;
-    if (!dragPreview && node) {
-      drag(node);
-    }
-  };
+  // Stable callback ref — useCallback prevents recreation every render so the
+  // drag connector isn't repeatedly attached/detached. drag(null) is called
+  // automatically on unmount/cleanup (removes draggable attribute correctly).
+  const attachDragRef = useCallback(
+    (node) => {
+      cardRef.current = node;
+      if (!dragPreview) {
+        drag(node); // pass null on cleanup → properly disconnects drag source
+      }
+    },
+    [drag, dragPreview],
+  );
 
   async function updateField(field, value) {
     updateCourse(course.id, field, value);

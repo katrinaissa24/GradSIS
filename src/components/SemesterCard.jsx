@@ -377,7 +377,23 @@ export default function SemesterCard({
               flexWrap: "wrap",
             }}
           >
-            {/* LEFT group: lock, status buttons, class, edit, trash */}
+            {/* LEFT side: Semester name */}
+            <h3
+              style={{
+                fontSize: isMobile ? 16 : 18,
+                fontWeight: 600,
+                margin: 0,
+                minWidth: 0,
+                flex: "1 1 auto",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {semester.name}
+            </h3>
+
+            {/* RIGHT group: lock, status buttons, class, edit, trash */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", flexShrink: 0 }}>
               {/* Lock icon button */}
               <button
@@ -493,23 +509,6 @@ export default function SemesterCard({
                 <Trash2 size={isMobile ? 14 : 15} />
               </button>
             </div>
-
-            {/* RIGHT side: Semester name */}
-            <h3
-              style={{
-                fontSize: isMobile ? 16 : 18,
-                fontWeight: 600,
-                margin: 0,
-                minWidth: 0,
-                flex: "1 1 auto",
-                textAlign: "right",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {semester.name}
-            </h3>
           </div>
         )}
       </div>

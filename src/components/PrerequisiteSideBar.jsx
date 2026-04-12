@@ -4,6 +4,7 @@ import { useDrop } from 'react-dnd';
 import { useNavigate } from "react-router-dom";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { supabase } from "../services/supabase";
+import { attributeOptions } from "../constants/attributes";
 
 const REQUIRED_ELECTIVE_BUCKETS = [
   { bucket: "Community Engaged Learning", required: 1 },
@@ -128,21 +129,8 @@ function PrerequisiteSidebar({
   );
   const courseIdsKey = useMemo(() => courseIds.join(","), [courseIds]);
 
-  // Build attribute list dynamically from actual course data
-  const availableAttributes = useMemo(() => {
-    const attrSet = new Set();
-    for (const c of courses) {
-      // Check the course_eligible_attributes relation
-      if (c.course_eligible_attributes) {
-        for (const x of c.course_eligible_attributes) {
-          if (x.attribute) attrSet.add(x.attribute);
-        }
-      }
-      // Also check a direct attribute field on the course
-      if (c.attribute) attrSet.add(c.attribute);
-    }
-    return [...attrSet].sort();
-  }, [courses]);
+  // Use the full static list of attributes so every option is always visible
+  const availableAttributes = attributeOptions;
 
   const filtered = useMemo(() => {
     return courses.filter((c) => {
