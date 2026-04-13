@@ -37,7 +37,6 @@ import DashboardLoadingShell from "../components/DashboardLoadingShell";
 
 const MOBILE_BREAKPOINT = 768;
 const TABLET_BREAKPOINT = 1100;
-const PROBATION_GPA_THRESHOLD = 2.0;
 const LOAD_CONFIG = {
   underload: { targetCredits: 12 },
   normal: { targetCredits: 17 },
@@ -45,7 +44,62 @@ const LOAD_CONFIG = {
 };
 const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
 
-function getOverloadRestrictionReason(semester, previousSemester, semesterIndex) {
+function isRegularTerm(semester) {
+  const name = (semester?.name || "").toLowerCase();
+  return !name.includes("summer") && !name.includes("winter");
+}
+
+function getAubProbationStatusForPreviousSemester(semesters, previousSemesterIndex) {
+  if (previousSemesterIndex < 0) return null;
+
+  const previousSemester = semesters[previousSemesterIndex];
+  if (!previousSemester || !isRegularTerm(previousSemester)) {
+    return null;
+  }
+
+  const completedSemesters = semesters.slice(0, previousSemesterIndex + 1);
+  const regularTermsCompleted = completedSemesters.filter(isRegularTerm).length;
+
+  if (regularTermsCompleted < 2) {
+    return null;
+  }
+
+  const previousSemesterGPA = Number.parseFloat(
+    calculateSemesterGPA(previousSemester.user_courses || []),
+  );
+
+  if (regularTermsCompleted === 2) {
+    const cumulativeGPA = Number.parseFloat(
+      calculateCumulativeGPAWithRepeats(
+        completedSemesters.flatMap((item) => item.user_courses || []),
+        completedSemesters,
+      ),
+    );
+
+    if (Number.isFinite(cumulativeGPA) && cumulativeGPA < 2.1) {
+      return {
+        metric: "overall GPA",
+        value: cumulativeGPA,
+        threshold: 2.1,
+      };
+    }
+
+    return null;
+  }
+
+  const threshold = regularTermsCompleted <= 4 ? 2.2 : 2.3;
+  if (Number.isFinite(previousSemesterGPA) && previousSemesterGPA < threshold) {
+    return {
+      metric: "term GPA",
+      value: previousSemesterGPA,
+      threshold,
+    };
+  }
+
+  return null;
+}
+
+function getOverloadRestrictionReason(semester, previousSemester, semesterIndex, semesters) {
   if (!semester) return null;
 
   if (semesterIndex >= 0 && semesterIndex < 2) {
@@ -62,12 +116,13 @@ function getOverloadRestrictionReason(semester, previousSemester, semesterIndex)
     return null;
   }
 
-  const previousSemesterGPA = Number.parseFloat(
-    calculateSemesterGPA(previousSemester.user_courses || []),
+  const probationStatus = getAubProbationStatusForPreviousSemester(
+    semesters,
+    semesterIndex - 1,
   );
 
-  if (Number.isFinite(previousSemesterGPA) && previousSemesterGPA < PROBATION_GPA_THRESHOLD) {
-    return `The previous locked semester is on probation (${previousSemesterGPA.toFixed(2)} GPA), so this semester cannot be overload.`;
+  if (probationStatus) {
+    return `The previous locked semester is on probation (${probationStatus.metric} ${probationStatus.value.toFixed(2)} below AUB's ${probationStatus.threshold.toFixed(1)} threshold), so this semester cannot be overload.`;
   }
 
   return null;
@@ -200,6 +255,18 @@ function createDashboardProfiler(label) {
   };
 }
 
+function supportsTouchInput() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return false;
+  }
+
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia?.("(pointer: coarse)")?.matches === true
+  );
+}
+
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
@@ -216,6 +283,7 @@ export default function Dashboard() {
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
+  const [hasTouchInput, setHasTouchInput] = useState(() => supportsTouchInput());
   const [isTabletLayout, setIsTabletLayout] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= TABLET_BREAKPOINT
@@ -297,6 +365,7 @@ export default function Dashboard() {
         semester,
         index > 0 ? semesters[index - 1] : null,
         index,
+        semesters,
       );
     });
 
@@ -796,6 +865,7 @@ export default function Dashboard() {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
       setIsTabletLayout(window.innerWidth <= TABLET_BREAKPOINT);
+      setHasTouchInput(supportsTouchInput());
     };
 
     handleResize();
@@ -1555,7 +1625,7 @@ const attributeToUse =
   }
 
   return (
-    <DashboardDndProvider isMobile={isMobile}>
+    <DashboardDndProvider useTouchBackend={hasTouchInput}>
       <DragLayerHost isMobile={isMobile} />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
@@ -2135,8 +2205,8 @@ function getDesktopDndManager() {
   return _desktopDndManager;
 }
 
-function DashboardDndProvider({ children, isMobile }) {
-  if (isMobile) {
+function DashboardDndProvider({ children, useTouchBackend }) {
+  if (useTouchBackend) {
     return <MultiDndProvider options={DND_OPTIONS}>{children}</MultiDndProvider>;
   }
 
