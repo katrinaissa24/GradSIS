@@ -13,6 +13,9 @@ const REQUIRED_ELECTIVE_BUCKETS = [
   { bucket: "Understanding the World", required: 1 },
   { bucket: "Societies and Individuals", required: 2 },
   { bucket: "Technical Elective", required: 1 },
+  {bucket :"Arabic Communication", required :1},
+  {bucket :"English Communication", required :2},
+
 ];
 
 const PASSING_GRADES = new Set([
@@ -163,20 +166,17 @@ function PrerequisiteSidebar({
   }, [courses, search, filter, enrolledCourseIds, completedCourseIds, selectedAttributes]);
 
   const electiveSections = useMemo(() => {
-    return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
-      const eligible = courses.filter((c) => {
-        const attrs = (c.course_eligible_attributes || []).map(
-          (x) => x.attribute,
-        );
-        return attrs.includes(bucket) && !completedCourseIds.has(c.id);
-      });
-      const creditsPerCourse = 3;
-      const row = electiveRows.find((r) => r.bucket === bucket);
-      const earnedCourses = row ? Math.floor(row.earned / creditsPerCourse) : 0;
-      const remaining = Math.max(0, required - earnedCourses);
-      return { bucket, required, remaining, courses: eligible };
+  return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
+    const eligible = courses.filter((c) => {
+      const attrs = (c.course_eligible_attributes || []).map((x) => x.attribute);
+      return attrs.includes(bucket) && !completedCourseIds.has(c.id);
     });
-  }, [courses, completedCourseIds, electiveRows]);
+    const row = electiveRows.find((r) => r.bucket === bucket);
+    const remainingCredits = row ? row.remaining : required * 3;
+    const remaining = Math.max(0, Math.ceil(remainingCredits / 3));
+    return { bucket, required, remaining, courses: eligible };
+  });
+}, [courses, completedCourseIds, electiveRows]);
 
   const enrolledCount = courses.filter((c) =>
     enrolledCourseIds.has(c.id),
