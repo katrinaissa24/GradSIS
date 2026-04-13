@@ -40,6 +40,7 @@ const MOBILE_COURSE_ROW_HEIGHT = 168;
 const EMPTY_REVIEW_STATS = {
   rating: null,
   recommend: null,
+  recommendCount: 0,
 };
 const catalogReviewStatsCache = new Map();
 const pendingCatalogReviewStats = new Set();
@@ -144,6 +145,7 @@ function buildReviewStatsLookup(courseIds, reviews) {
         difficultyCount: 0,
         recommendCount: 0,
         reviewCount: 0,
+        recommendReviewCount: 0,
       };
     }
 
@@ -156,6 +158,9 @@ function buildReviewStatsLookup(courseIds, reviews) {
 
     if (review.would_recommend === true) {
       acc[courseId].recommendCount += 1;
+      acc[courseId].recommendReviewCount += 1;
+    } else if (review.would_recommend === false) {
+      acc[courseId].recommendReviewCount += 1;
     }
 
     return acc;
@@ -179,7 +184,11 @@ function buildReviewStatsLookup(courseIds, reviews) {
                 : 0,
             count: stats.reviewCount,
           },
-          recommend: Math.round((stats.recommendCount / stats.reviewCount) * 100),
+          recommend:
+            stats.recommendReviewCount > 0
+              ? Math.round((stats.recommendCount / stats.recommendReviewCount) * 100)
+              : null,
+          recommendCount: stats.recommendReviewCount,
         },
       ];
     }),
@@ -749,6 +758,7 @@ function PrerequisiteSidebar({
                     isEnrolled={enrolledCourseIds.has(course.id)}
                     rating={reviewStatsByCourseId[course.id]?.rating ?? null}
                     recommend={reviewStatsByCourseId[course.id]?.recommend ?? null}
+                    recommendCount={reviewStatsByCourseId[course.id]?.recommendCount ?? 0}
                     isMobile={isMobile}
                     onQuickAdd={onQuickAddCourse}
                     disabled={!mobileSemesterId && isMobile}
@@ -816,6 +826,7 @@ function DraggableCourseCard({
   isEnrolled,
   rating,
   recommend,
+  recommendCount = 0,
   electiveAttribute,
   isMobile = false,
   onQuickAdd,
@@ -952,7 +963,7 @@ function DraggableCourseCard({
 
         {recommend !== null && (
           <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>
-            👍 {recommend}% recommend
+            👍 {recommend}% recommend ({recommendCount} vote{recommendCount !== 1 ? "s" : ""})
           </div>
         )}
 

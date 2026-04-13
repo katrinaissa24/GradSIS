@@ -185,6 +185,7 @@ export default function CourseRating() {
   const [wouldRecommend, setWouldRecommend] = useState(null);
   const [averageDifficulty, setAverageDifficulty] = useState(0);
   const [recommendStats, setRecommendStats] = useState({ up: 0, down: 0 });
+  const canManageReview = hasTaken || Boolean(userReview);
 
   useEffect(() => {
     async function load() {
@@ -247,6 +248,11 @@ setHasTaken(hasTakenResult);
       setComment(existing.comment || "");
       setDifficulty(existing.difficulty || 0);
       setWouldRecommend(existing.would_recommend);
+    } else {
+      setUserReview(null);
+      setComment("");
+      setDifficulty(0);
+      setWouldRecommend(null);
     }
   }
 async function handleDeleteReview() {
@@ -371,8 +377,8 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
 
       </div>
 
-      {/* Submit review — only if user has taken the course */}
-      {hasTaken ? (
+      {/* Submit review */}
+      {canManageReview ? (
         <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.08)", marginBottom: 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
             {userReview ? "Update Your Review" : "Leave a Review"}

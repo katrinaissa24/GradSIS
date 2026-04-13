@@ -35,6 +35,8 @@ export default function Prerequisite({
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [rating, setRating] = useState(null);
   const [recommend, setRecommend] = useState(null);
+  const [recommendCount, setRecommendCount] = useState(0);
+  const [existingReview, setExistingReview] = useState(null);
 
   const LOAD_RULES = {
     underload: { min: 0, max: 12, label: "Underload" },
@@ -127,6 +129,8 @@ export default function Prerequisite({
       setSelectedCourse(null);
       setRating(null);
       setRecommend(null);
+      setRecommendCount(0);
+      setExistingReview(null);
       return;
     }
 
@@ -145,6 +149,8 @@ export default function Prerequisite({
       setSelectedCourse(null);
       setRating(null);
       setRecommend(null);
+      setRecommendCount(0);
+      setExistingReview(null);
       return;
     }
 
@@ -156,6 +162,8 @@ export default function Prerequisite({
       setSelectedCourse(null);
       setRating(null);
       setRecommend(null);
+      setRecommendCount(0);
+      setExistingReview(null);
       return;
     }
 
@@ -164,34 +172,55 @@ export default function Prerequisite({
 
     const { data: reviews, error: reviewsError } = await supabase
       .from("course_reviews")
-      .select("difficulty, would_recommend")
+      .select("user_id, comment, difficulty, would_recommend")
       .eq("course_id", data.id);
 
     if (reviewsError || !reviews) {
       setRating(null);
       setRecommend(null);
+      setRecommendCount(0);
+      setExistingReview(null);
       return;
     }
 
+    setExistingReview((reviews || []).find((review) => review.user_id === userId) || null);
+
     if (reviews.length > 0) {
-      const avg =
-        reviews.reduce((sum, r) => sum + Number(r.difficulty || 0), 0) /
-        reviews.length;
+      const difficultyReviews = reviews.filter((r) => r.difficulty != null);
+      const recommendationReviews = reviews.filter(
+        (r) => r.would_recommend === true || r.would_recommend === false,
+      );
 
-      setRating({
-        avg,
-        count: reviews.length,
-      });
+      if (difficultyReviews.length > 0) {
+        const avg =
+          difficultyReviews.reduce((sum, r) => sum + Number(r.difficulty), 0) /
+          difficultyReviews.length;
 
-      const recommendCount = reviews.filter(
-        (r) => r.would_recommend === true,
-      ).length;
+        setRating({
+          avg,
+          count: difficultyReviews.length,
+        });
+      } else {
+        setRating(null);
+      }
 
-      const percent = Math.round((recommendCount / reviews.length) * 100);
-      setRecommend(percent);
+      if (recommendationReviews.length > 0) {
+        const recommendCount = recommendationReviews.filter(
+          (r) => r.would_recommend === true,
+        ).length;
+
+        const percent = Math.round((recommendCount / recommendationReviews.length) * 100);
+        setRecommend(percent);
+        setRecommendCount(recommendationReviews.length);
+      } else {
+        setRecommend(null);
+        setRecommendCount(0);
+      }
     } else {
       setRating(null);
       setRecommend(null);
+      setRecommendCount(0);
+      setExistingReview(null);
     }
   }
 
@@ -340,11 +369,13 @@ export default function Prerequisite({
         text: `${selectedCourse.code} ${selectedCourse.number} added successfully!`,
         type: "success",
       });
-      setSelectedCourse(null);
-      setCodePrefix("");
-      setCourseNumber("");
-      setRating(null);
-      setRecommend(null);
+    setSelectedCourse(null);
+    setCodePrefix("");
+    setCourseNumber("");
+    setRating(null);
+    setRecommend(null);
+    setRecommendCount(0);
+    setExistingReview(null);
 
       if (onCourseRegistered) onCourseRegistered();
     } finally {
@@ -442,8 +473,22 @@ async function assignCourseToSemester(course, semesterId) {
             )}
             {recommend !== null && (
               <span className="course-recommend">
-                👍 {recommend}% recommend
+                👍 {recommend}% recommend ({recommendCount} vote{recommendCount !== 1 ? "s" : ""})
               </span>
+            )}
+            {existingReview && (
+              <div className="course-recommend" style={{ color: "#374151" }}>
+                <strong>Your previous review:</strong>
+                {existingReview.difficulty != null && (
+                  <span>
+                    {" "}
+                    Difficulty {existingReview.difficulty}/5
+                  </span>
+                )}
+                {existingReview.would_recommend === true && <span> • Recommended</span>}
+                {existingReview.would_recommend === false && <span> • Not recommended</span>}
+                {existingReview.comment && <span> • {existingReview.comment}</span>}
+              </div>
             )}
             <span className="course-credits">
               + {selectedCourse.credits} credits
