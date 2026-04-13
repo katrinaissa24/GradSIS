@@ -24,7 +24,7 @@ export default function CourseCard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const courseCredits = getCourseCredits(course);
   const [creditsDraft, setCreditsDraft] = useState(String(courseCredits || 3));
-
+const [attributeWarning, setAttributeWarning] = useState(null);
   useEffect(() => {
     setCreditsDraft(String(courseCredits || 3));
   }, [courseCredits]);
@@ -71,14 +71,29 @@ export default function CourseCard({
     [drag, dragPreview],
   );
 
-  async function updateField(field, value) {
-    updateCourse(course.id, field, value);
-    const { error } = await supabase
-      .from("user_courses")
-      .update({ [field]: value })
-      .eq("id", course.id);
-    if (error) console.error(`Failed to update ${field}:`, error);
+ async function updateField(field, value) {
+  if (field === "attribute") {
+    const eligibleAttrs = (course.courses?.course_eligible_attributes || [])
+      .map((x) => x.attribute)
+      .filter(Boolean);
+
+    if (eligibleAttrs.length > 0 && !eligibleAttrs.includes(value) && value !== "Major Course") {
+      setAttributeWarning({
+        newValue: value,
+        eligible: eligibleAttrs.join(", "),
+      });
+      return;
+    }
   }
+
+  setAttributeWarning(null);
+  updateCourse(course.id, field, value);
+  const { error } = await supabase
+    .from("user_courses")
+    .update({ [field]: value })
+    .eq("id", course.id);
+  if (error) console.error(`Failed to update ${field}:`, error);
+}
 
   function commitCredits() {
     let parsed = parseFloat(creditsDraft);
@@ -294,6 +309,74 @@ export default function CourseCard({
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => { setConfirmOpen(false); deleteCourse(course.id); }}
       />
+      {attributeWarning && (
+  <div style={{
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.4)",
+    zIndex: 1000,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  }}>
+    <div style={{
+      background: "#fff",
+      borderRadius: 12,
+      padding: 24,
+      maxWidth: 400,
+      width: "100%",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>
+        ⚠ Attribute Mismatch
+      </div>
+      <p style={{ fontSize: 14, color: "#374151", marginBottom: 16, lineHeight: 1.5 }}>
+        This course is designated as <b>{attributeWarning.eligible}</b> in the system.
+        Changing it to <b>{attributeWarning.newValue}</b> may affect your elective progress tracking.
+      </p>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button
+          onClick={() => setAttributeWarning(null)}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            background: "#fff",
+            cursor: "pointer",
+            fontSize: 14,
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={async () => {
+            const value = attributeWarning.newValue;
+            setAttributeWarning(null);
+            updateCourse(course.id, "attribute", value);
+            const { error } = await supabase
+              .from("user_courses")
+              .update({ attribute: value })
+              .eq("id", course.id);
+            if (error) console.error("Failed to update attribute:", error);
+          }}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: "#dc2626",
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Change Anyway
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </>
   );
 }
