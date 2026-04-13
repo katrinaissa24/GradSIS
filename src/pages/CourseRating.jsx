@@ -147,6 +147,25 @@ function getDifficultyLabel(d) {
   return "Very Hard";
 }
 
+function matchesDifficultyFilter(difficulty, filterValue) {
+  if (filterValue === "all") return true;
+
+  const numericDifficulty = Number(difficulty || 0);
+
+  switch (filterValue) {
+    case "hard":
+      return numericDifficulty >= 3.5;
+    case "medium":
+      return numericDifficulty >= 2.5;
+    case "easy":
+      return numericDifficulty >= 1.5;
+    case "very-easy":
+      return numericDifficulty >= 1;
+    default:
+      return true;
+  }
+}
+
 export default function CourseRating() {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -300,8 +319,7 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
 
   const visibleReviews = reviews
     .filter((review) => {
-      if (ratingFilter === "all") return true;
-      return Number(review.difficulty || 0) >= Number(ratingFilter);
+      return matchesDifficultyFilter(review.difficulty, ratingFilter);
     })
     .sort((a, b) => {
       if (sortOption === "highest") {
@@ -533,10 +551,10 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
                 }}
               >
                 <option value="all">All difficulties</option>
-                <option value="4">Hard & above</option>
-                <option value="3">Medium & above</option>
-                <option value="2">Easy & above</option>
-                <option value="1">Very Easy & above</option>
+                <option value="hard">Hard & above</option>
+                <option value="medium">Medium & above</option>
+                <option value="easy">Easy & above</option>
+                <option value="very-easy">Very Easy & above</option>
               </select>
             </label>
 

@@ -715,17 +715,34 @@ export default function Dashboard() {
     const profiler = createDashboardProfiler("catalog-fetch");
 
     try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(`
-          id, code, number, name, credits, req_sem,
-          course_eligible_attributes ( attribute )
-        `)
-        .order("code", { ascending: true });
+      const pageSize = 500;
+      const fetchedCourses = [];
+      let from = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(`
+            id, code, number, name, credits, req_sem, attribute,
+            course_eligible_attributes ( attribute )
+          `)
+          .order("code", { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) throw error;
+        if (!data?.length) break;
+
+        fetchedCourses.push(...data);
+
+        if (data.length < pageSize) {
+          break;
+        }
+
+        from += pageSize;
+      }
       profiler.step("courses");
 
-      if (error) throw error;
-      setPrerequisiteCourses(data || []);
+      setPrerequisiteCourses(fetchedCourses);
       profiler.step("state-commit");
     } catch (err) {
       console.error("Error fetching courses:", err);
@@ -1289,7 +1306,7 @@ export default function Dashboard() {
   "CEL": "CEL",
 };
 
-const courseFirstEligible = course?.course_eligible_attributes?.[0]?.attribute;
+const courseFirstEligible = course?.course_eligible_attributes?.[0]?.attribute || course?.attribute;
 const attributeToUse =
   BUCKET_TO_ATTRIBUTE[electiveAttribute] ||
   (courseFirstEligible && ELIGIBLE_TO_ATTRIBUTE[courseFirstEligible]
@@ -1313,6 +1330,7 @@ const attributeToUse =
             code: course.code,
             number: course.number,
             credits: course.credits,
+            attribute: course.attribute ?? null,
             course_eligible_attributes: course.course_eligible_attributes || [],
           }
         : {
@@ -1341,7 +1359,7 @@ const attributeToUse =
       .select(`
         *,
         courses (
-          id, name, code, number, credits,
+          id, name, code, number, credits, attribute,
           course_eligible_attributes ( attribute )
         )
       `)

@@ -43,6 +43,87 @@ const EMPTY_REVIEW_STATS = {
 };
 const catalogReviewStatsCache = new Map();
 const pendingCatalogReviewStats = new Set();
+const ATTRIBUTE_TO_BUCKET = {
+  "Engl. Communication": "English Communication",
+  "Arab. Communication": "Arabic Communication",
+  "Human Values": "Human Values",
+  "Cultures & Histories": "Cultures and Histories",
+  "Societies & Individuals": "Societies and Individuals",
+  "Understanding the World": "Understanding the World",
+  "Technical Elective": "Technical Elective",
+  CEL: "Community Engaged Learning",
+};
+const ATTRIBUTE_ALIASES = {
+  Humanities: [
+    "Humanities",
+    "Human Values",
+    "Cultures & Histories",
+    "Cultures and Histories",
+    "Societies & Individuals",
+    "Societies and Individuals",
+    "Understanding the World",
+  ],
+  "Soc. Science": [
+    "Soc. Science",
+    "Societies & Individuals",
+    "Societies and Individuals",
+  ],
+  "Quant. Thought": ["Quant. Thought", "Quantitative Reasoning"],
+  "Engl. Communication": ["Engl. Communication", "English Communication"],
+  "Arab. Communication": ["Arab. Communication", "Arabic Communication"],
+  CEL: ["CEL", "Community Engaged Learning"],
+};
+
+function normalizeAttributeLabel(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function expandAttribute(attribute) {
+  const canonical = ATTRIBUTE_TO_BUCKET[attribute] || attribute;
+  return [...new Set([attribute, canonical, ...(ATTRIBUTE_ALIASES[attribute] || [])])].filter(Boolean);
+}
+
+function getCourseAttributes(course) {
+  const attrs = new Set();
+
+  for (const entry of course.course_eligible_attributes || []) {
+    if (entry?.attribute) {
+      for (const attr of expandAttribute(entry.attribute)) {
+        attrs.add(attr);
+      }
+    }
+  }
+
+  if (course.attribute) {
+    for (const attr of expandAttribute(course.attribute)) {
+      attrs.add(attr);
+    }
+  }
+
+  return [...attrs].filter(Boolean);
+}
+
+function getNormalizedCourseAttributes(course) {
+  return new Set(getCourseAttributes(course).map(normalizeAttributeLabel).filter(Boolean));
+}
+
+function getCourseSearchText(course) {
+  return normalizeAttributeLabel(
+    [
+      course.code,
+      course.number,
+      course.name,
+      ...getCourseAttributes(course),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
 
 function getDifficultyLabel(d) {
   if (d < 1.5) return "Very Easy";
@@ -145,46 +226,54 @@ function PrerequisiteSidebar({
 
   const filtered = useMemo(() => {
     return courses.filter((c) => {
+      const normalizedSearch = search.trim().toLowerCase();
+      const attributeTerms = getCourseAttributes(c);
+      const normalizedAttributeTerms = [...getNormalizedCourseAttributes(c)];
+      const courseSearchText = getCourseSearchText(c);
       const matchesSearch =
-        c.code?.toLowerCase().includes(search.toLowerCase()) ||
-        c.name?.toLowerCase().includes(search.toLowerCase()) ||
-        c.number?.toString().toLowerCase().includes(search.toLowerCase()) ||
-        `${c.code} ${c.number}`.toLowerCase().includes(search.toLowerCase()) ||
-        `${c.code}${c.number}`.toLowerCase().includes(search.toLowerCase());
+        !normalizedSearch ||
+        c.code?.toLowerCase().includes(normalizedSearch) ||
+        c.name?.toLowerCase().includes(normalizedSearch) ||
+        c.number?.toString().toLowerCase().includes(normalizedSearch) ||
+        `${c.code} ${c.number}`.toLowerCase().includes(normalizedSearch) ||
+        `${c.code}${c.number}`.toLowerCase().includes(normalizedSearch) ||
+        attributeTerms.some((attr) => attr.toLowerCase().includes(normalizedSearch)) ||
+        normalizedAttributeTerms.some((attr) => attr.includes(normalizeAttributeLabel(normalizedSearch)));
       const isEnrolled = enrolledCourseIds.has(c.id);
       const isCompleted = completedCourseIds.has(c.id);
       const matchesFilter =
         filter === "all" ||
         (filter === "enrolled" && isEnrolled) ||
         (filter === "available" && !isEnrolled && !isCompleted);
-      // Check attribute filter against both eligible_attributes and direct attribute
       let matchesAttribute = true;
       if (selectedAttributes.length > 0) {
-        const courseAttrs = new Set();
-        if (c.course_eligible_attributes) {
-          for (const x of c.course_eligible_attributes) {
-            if (x.attribute) courseAttrs.add(x.attribute);
-          }
-        }
-        if (c.attribute) courseAttrs.add(c.attribute);
-        matchesAttribute = selectedAttributes.some((a) => courseAttrs.has(a));
+        const courseAttrs = getNormalizedCourseAttributes(c);
+        matchesAttribute = selectedAttributes.some(
+          (attr) =>
+            expandAttribute(attr)
+              .map(normalizeAttributeLabel)
+              .some(
+                (candidate) =>
+                  courseAttrs.has(candidate) || courseSearchText.includes(candidate),
+              ),
+        );
       }
       return matchesSearch && matchesFilter && matchesAttribute;
     });
   }, [courses, search, filter, enrolledCourseIds, completedCourseIds, selectedAttributes]);
 
   const electiveSections = useMemo(() => {
-  return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
-    const eligible = courses.filter((c) => {
-      const attrs = (c.course_eligible_attributes || []).map((x) => x.attribute);
-      return attrs.includes(bucket) && !completedCourseIds.has(c.id);
+    return REQUIRED_ELECTIVE_BUCKETS.map(({ bucket, required }) => {
+      const eligible = courses.filter((course) => {
+        const attrs = getCourseAttributes(course);
+        return attrs.includes(bucket) && !completedCourseIds.has(course.id);
+      });
+      const row = electiveRows.find((entry) => entry.bucket === bucket);
+      const remainingCredits = row ? row.remaining : required * 3;
+      const remaining = Math.max(0, Math.ceil(remainingCredits / 3));
+      return { bucket, required, remaining, courses: eligible };
     });
-    const row = electiveRows.find((r) => r.bucket === bucket);
-    const remainingCredits = row ? row.remaining : required * 3;
-    const remaining = Math.max(0, Math.ceil(remainingCredits / 3));
-    return { bucket, required, remaining, courses: eligible };
-  });
-}, [courses, completedCourseIds, electiveRows]);
+  }, [courses, completedCourseIds, electiveRows]);
 
   const enrolledCount = courses.filter((c) =>
     enrolledCourseIds.has(c.id),
