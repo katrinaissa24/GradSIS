@@ -14,8 +14,6 @@ const STUDENT_STATUS_OPTIONS = [
   { value: "senior", label: "Senior" },
 ];
 
-const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
-
 export default function SemesterCard({
   semester,
   updateStatus,
@@ -33,6 +31,7 @@ export default function SemesterCard({
   isAddCourseOpen = false,
   onToggleAddCourse,
   reviewStatsByCourseId = {},
+  overloadDisabledReason = "",
 }) {
   const gpa = calculateSemesterGPA(semester.user_courses);
   const credits = calculateCredits(semester.user_courses);
@@ -50,7 +49,7 @@ export default function SemesterCard({
   const [missingRatings, setMissingRatings] = useState(false);
 
   const studentStatus = semester.student_status || "";
-  const overloadDisabled = NO_OVERLOAD_STATUSES.has(studentStatus);
+  const overloadDisabled = Boolean(overloadDisabledReason);
   const loadModeRaw = semester.load_mode || "normal";
   const loadMode = overloadDisabled && loadModeRaw === "overload" ? "normal" : loadModeRaw;
   const isLocked = !!semester.is_locked;
@@ -592,9 +591,7 @@ export default function SemesterCard({
                     value={mode}
                     disabled={disabled}
                     title={
-                      disabled
-                        ? "Freshmen and sophomores cannot overload"
-                        : undefined
+                      disabled ? overloadDisabledReason : undefined
                     }
                     style={disabled ? { color: "#9ca3af" } : undefined}
                   >
@@ -620,8 +617,8 @@ export default function SemesterCard({
           </div>
           {overloadDisabled && (
             <span
-              title="Freshmen and sophomores cannot overload"
-              aria-label="Freshmen and sophomores cannot overload"
+              title={overloadDisabledReason}
+              aria-label={overloadDisabledReason}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -718,4 +715,3 @@ export default function SemesterCard({
     </div>
   );
 }
-

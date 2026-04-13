@@ -21,6 +21,7 @@ import {
   TouchTransition,
 } from "react-dnd-multi-backend";
 import {
+  calculateSemesterGPA,
   calculateCumulativeGPAWithRepeats,
   calculateGPACreditHours,
   getCourseCredits,
@@ -36,11 +37,41 @@ import DashboardLoadingShell from "../components/DashboardLoadingShell";
 
 const MOBILE_BREAKPOINT = 768;
 const TABLET_BREAKPOINT = 1100;
+const PROBATION_GPA_THRESHOLD = 2.0;
 const LOAD_CONFIG = {
   underload: { targetCredits: 12 },
   normal: { targetCredits: 17 },
   overload: { targetCredits: 21 },
 };
+const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
+
+function getOverloadRestrictionReason(semester, previousSemester, semesterIndex) {
+  if (!semester) return null;
+
+  if (semesterIndex >= 0 && semesterIndex < 2) {
+    return "The first two semesters cannot be marked as overload.";
+  }
+
+  if (NO_OVERLOAD_STATUSES.has(semester.student_status || "")) {
+    return "Freshmen and sophomores cannot overload.";
+  }
+
+  if (!previousSemester) return null;
+
+  if (previousSemester.status !== "previous" || !previousSemester.is_locked) {
+    return null;
+  }
+
+  const previousSemesterGPA = Number.parseFloat(
+    calculateSemesterGPA(previousSemester.user_courses || []),
+  );
+
+  if (Number.isFinite(previousSemesterGPA) && previousSemesterGPA < PROBATION_GPA_THRESHOLD) {
+    return `The previous locked semester is on probation (${previousSemesterGPA.toFixed(2)} GPA), so this semester cannot be overload.`;
+  }
+
+  return null;
+}
 
 const DND_OPTIONS = {
   backends: [
@@ -257,6 +288,20 @@ export default function Dashboard() {
       return changed ? next : prev;
     });
   }, [updateSemesterList]);
+
+  const overloadRestrictionBySemesterId = useMemo(() => {
+    const restrictionMap = {};
+
+    semesters.forEach((semester, index) => {
+      restrictionMap[semester.id] = getOverloadRestrictionReason(
+        semester,
+        index > 0 ? semesters[index - 1] : null,
+        index,
+      );
+    });
+
+    return restrictionMap;
+  }, [semesters]);
 
   const allCourses = useMemo(
     () => semesters.flatMap((semester) => semester.user_courses || []),
@@ -780,6 +825,45 @@ export default function Dashboard() {
   }, [isMobile]);
 
   useEffect(() => {
+    const invalidOverloadSemesters = semesters.filter(
+      (semester) =>
+        semester.load_mode === "overload" &&
+        overloadRestrictionBySemesterId[semester.id],
+    );
+
+    if (!invalidOverloadSemesters.length || !authUser?.id) {
+      return;
+    }
+
+    updateSemesterList((prev) =>
+      prev.map((semester) =>
+        invalidOverloadSemesters.some((item) => item.id === semester.id)
+          ? {
+              ...semester,
+              load_mode: "normal",
+              target_credits: LOAD_CONFIG.normal.targetCredits,
+            }
+          : semester,
+      ),
+    );
+
+    invalidOverloadSemesters.forEach(async (semester) => {
+      const { error } = await supabase
+        .from("user_semesters")
+        .update({
+          load_mode: "normal",
+          target_credits: LOAD_CONFIG.normal.targetCredits,
+        })
+        .eq("id", semester.id)
+        .eq("user_id", authUser.id);
+
+      if (error) {
+        console.error("Failed to normalize restricted overload semester:", error);
+      }
+    });
+  }, [authUser?.id, overloadRestrictionBySemesterId, semesters, updateSemesterList]);
+
+  useEffect(() => {
     const isCatalogOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
     if (!isCatalogOpen || hasLoadedPrerequisiteCourses) return;
 
@@ -809,6 +893,13 @@ export default function Dashboard() {
 
   const updateSemesterLoadMode = useCallback(async (id, newLoadMode) => {
     if (!authUser?.id) return;
+
+    if (
+      newLoadMode === "overload" &&
+      overloadRestrictionBySemesterId[id]
+    ) {
+      return;
+    }
 
     const targetCredits = LOAD_CONFIG[newLoadMode]?.targetCredits ?? 17;
 
@@ -840,7 +931,7 @@ export default function Dashboard() {
       console.error("Failed to update semester load mode:", error);
       await initialize();
     }
-  }, [authUser?.id, updateSemesterById]);
+  }, [authUser?.id, initialize, overloadRestrictionBySemesterId, updateSemesterById]);
 
   const updateSemesterName = useCallback((id, name) => {
     updateSemesterById(id, (sem) => ({ ...sem, name }));
@@ -1888,6 +1979,7 @@ const attributeToUse =
               isAddCourseOpen={openAddCourseSemesterId === sem.id}
               onToggleAddCourse={handleToggleAddCourse}
               reviewStatsByCourseId={reviewStatsByCourseId}
+              overloadDisabledReason={overloadRestrictionBySemesterId[sem.id]}
             />
             ))}
 
