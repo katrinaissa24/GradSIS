@@ -340,7 +340,7 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
         {reviews.length > 0 && (
   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
     <div style={{ fontSize: 18, fontWeight: 700 }}>
-      {averageDifficulty.toFixed(2)} ★
+      Difficulty: {averageDifficulty.toFixed(1)} / 5
     </div>
     <div style={{ fontSize: 12, color: "#6b7280" }}>
       {getDifficultyLabel(averageDifficulty)}
@@ -361,79 +361,47 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
             {userReview ? "Update Your Review" : "Leave a Review"}
           </h2>
-<div style={{ marginBottom: 14 }}>
-  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+<div style={{ marginBottom: 18 }}>
+  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
     Difficulty ({difficulty || 0}/5)
   </div>
 
-  <div style={{ display: "flex", gap: 8 }}>
-    {[1, 2, 3, 4, 5].map((star) => {
-      let fillPercent = 0;
-      if (difficulty >= star) fillPercent = 100;
-      else if (difficulty >= star - 0.5) fillPercent = 50;
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 12,
+      color: "#6b7280",
+      marginBottom: 8,
+    }}
+  >
+    <span>Very Easy</span>
+    <span>Easy</span>
+    <span>Medium</span>
+    <span>Hard</span>
+    <span>Very Hard</span>
+  </div>
 
-      return (
-        <div
-          key={star}
-          style={{
-            position: "relative",
-            width: 28,
-            height: 28,
-            cursor: "pointer",
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            style={{ position: "absolute", inset: 0 }}
-          >
-            <path
-              d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
-              fill="#d1d5db"
-            />
-          </svg>
-
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: `${fillPercent}%`,
-              overflow: "hidden",
-            }}
-          >
-            <svg viewBox="0 0 24 24" style={{ width: 28, height: 28 }}>
-              <path
-                d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
-                fill="#facc15"
-              />
-            </svg>
-          </div>
-
-          <div
-            onClick={() => setDifficulty(star - 0.5)}
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: "50%",
-              height: "100%",
-              zIndex: 2,
-            }}
-          />
-
-          <div
-            onClick={() => setDifficulty(star)}
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              width: "50%",
-              height: "100%",
-              zIndex: 2,
-            }}
-          />
-        </div>
-      );
-    })}
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    }}
+  >
+    {[1,1.5,2,2.5,3,3.5,4,4.5,5].map((level) => (      <div
+        key={level}
+        onClick={() => setDifficulty(level)}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          border: "2px solid #111",
+          background: difficulty === level ? "#111" : "transparent",
+          cursor: "pointer",
+        }}
+      />
+    ))}
   </div>
 </div>
       
@@ -550,7 +518,7 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
         {reviews.length > 0 && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#4b5563" }}>
-              Filter by rating
+              Filter by difficulty
               <select
                 value={ratingFilter}
                 onChange={(e) => setRatingFilter(e.target.value)}
@@ -564,11 +532,11 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
                   color: "#111827",
                 }}
               >
-                <option value="all">All ratings</option>
-                <option value="4">4 stars & up</option>
-                <option value="3">3 stars & up</option>
-                <option value="2">2 stars & up</option>
-                <option value="1">1 star & up</option>
+                <option value="all">All difficulties</option>
+                <option value="4">Hard & above</option>
+                <option value="3">Medium & above</option>
+                <option value="2">Easy & above</option>
+                <option value="1">Very Easy & above</option>
               </select>
             </label>
 
@@ -630,45 +598,8 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
       </div>
     )}
 
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-      <div style={{ display: "flex", gap: 4 }}>
-        {[1, 2, 3, 4, 5].map((star) => {
-          let fillPercent = 0;
-          if (r.difficulty >= star) fillPercent = 100;
-          else if (r.difficulty >= star - 0.5) fillPercent = 50;
-
-          return (
-            <div key={star} style={{ position: "relative", width: 18, height: 18 }}>
-              <svg viewBox="0 0 24 24" style={{ position: "absolute", inset: 0 }}>
-                <path
-                  d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
-                  fill="#d1d5db"
-                />
-              </svg>
-
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: `${fillPercent}%`,
-                  overflow: "hidden",
-                }}
-              >
-                <svg viewBox="0 0 24 24" style={{ width: 18, height: 18 }}>
-                  <path
-                    d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
-                    fill="#facc15"
-                  />
-                </svg>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
-        {r.difficulty}/5
-      </div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 10 }}>
+      Difficulty: {r.difficulty}/5 — {getDifficultyLabel(Number(r.difficulty || 0))}
     </div>
 
     {r.comment && (

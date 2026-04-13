@@ -44,6 +44,14 @@ const EMPTY_REVIEW_STATS = {
 const catalogReviewStatsCache = new Map();
 const pendingCatalogReviewStats = new Set();
 
+function getDifficultyLabel(d) {
+  if (d < 1.5) return "Very Easy";
+  if (d < 2.5) return "Easy";
+  if (d < 3.5) return "Medium";
+  if (d < 4.5) return "Hard";
+  return "Very Hard";
+}
+
 function buildReviewStatsLookup(courseIds, reviews) {
   const groupedStats = (reviews || []).reduce((acc, review) => {
     const courseId = review.course_id;
@@ -841,17 +849,23 @@ function DraggableCourseCard({
         {course.name}
       </div>
 
-      {rating && rating.count > 0 && (
-        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-          ⭐ {rating.avg.toFixed(1)} / 5 ({rating.count})
-        </div>
-      )}
+        {rating && rating.count > 0 && (
+          <div style={{ marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "#6b7280" }}>
+              Difficulty: {rating.avg.toFixed(1)} / 5
+            </div>
 
-      {recommend !== null && (
-        <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>
-          👍 {recommend}% recommend
-        </div>
-      )}
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+              {getDifficultyLabel(rating.avg)} ({rating.count} reviews)
+            </div>
+          </div>
+        )}
+
+        {recommend !== null && (
+          <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>
+            👍 {recommend}% recommend
+          </div>
+        )}
 
       {attrs.length > 0 && (
         <div

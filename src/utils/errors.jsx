@@ -79,6 +79,14 @@ export default function Prerequisite({
     }
   }
 
+  function getDifficultyLabel(d) {
+  if (d < 1.5) return "Very Easy";
+  if (d < 2.5) return "Easy";
+  if (d < 3.5) return "Medium";
+  if (d < 4.5) return "Hard";
+  return "Very Hard";
+}
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -412,7 +420,7 @@ export default function Prerequisite({
             <span className="course-name">{selectedCourse.name}</span>
             {rating && (
               <span className="course-rating">
-                ⭐ {rating.avg.toFixed(1)} / 5 ({rating.count} reviews)
+                Difficulty: {rating.avg.toFixed(1)} / 5 — {getDifficultyLabel(rating.avg)}
               </span>
             )}
             {recommend !== null && (
