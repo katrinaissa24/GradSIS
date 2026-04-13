@@ -289,7 +289,6 @@ if (comment.trim()) updates.comment = censorComment(comment.trim());
       } else {
         setMessage({ text: "Review updated!", type: "success" });
         await fetchReviews(userId);
-        setComment("");
       }
     } else {
       const newReview = {
@@ -310,7 +309,6 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
       } else {
         setMessage({ text: "Review submitted!", type: "success" });
         await fetchReviews(userId);
-        setComment("");
       }
     }
 
@@ -626,14 +624,16 @@ if (comment.trim()) newReview.comment = censorComment(comment.trim());
       </div>
     )}
 
-    <div style={{
-  marginTop: 8,
-  fontSize: 13,
-  fontWeight: 600,
-  color: r.would_recommend ? "#16a34a" : "#dc2626"
-}}>
-  {r.would_recommend ? "👍 Recommended" : "👎 Not recommended"}
-</div>
+    {r.would_recommend !== null && (
+      <div style={{
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    color: r.would_recommend ? "#16a34a" : "#dc2626"
+  }}>
+    {r.would_recommend ? "👍 Recommended" : "👎 Not recommended"}
+  </div>
+    )}
 
     <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 10 }}>
       {new Date(r.created_at).toLocaleDateString()}
