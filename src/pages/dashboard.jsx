@@ -1127,10 +1127,25 @@ export default function Dashboard() {
       "Arabic Communication": "Arab. Communication",
     };
 
-    const attributeToUse =
-      BUCKET_TO_ATTRIBUTE[electiveAttribute] ||
-      (course && !electiveAttribute ? "Major Course" : electiveAttribute) ||
-      "Elective";
+    const ELIGIBLE_TO_ATTRIBUTE = {
+  "Engl. Communication": "Engl. Communication",
+  "Arab. Communication": "Arab. Communication",
+  "Human Values": "Human Values",
+  "Cultures & Histories": "Cultures & Histories",
+  "Societies & Individuals": "Societies & Individuals",
+  "Understanding the World": "Understanding the World",
+  "Technical Elective": "Technical Elective",
+  "CEL": "CEL",
+};
+
+const courseFirstEligible = course?.course_eligible_attributes?.[0]?.attribute;
+const attributeToUse =
+  BUCKET_TO_ATTRIBUTE[electiveAttribute] ||
+  (courseFirstEligible && ELIGIBLE_TO_ATTRIBUTE[courseFirstEligible]
+    ? ELIGIBLE_TO_ATTRIBUTE[courseFirstEligible]
+    : null) ||
+  (course && !electiveAttribute ? "Major Course" : electiveAttribute) ||
+  "Elective";
 
     const tempId = `temp-${Date.now()}`;
     const optimisticEntry = {

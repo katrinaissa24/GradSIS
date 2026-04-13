@@ -115,12 +115,12 @@ export default function Prerequisite({
     const normalizedNumber = courseNumber.trim();
 
     const { data, error } = await supabase
-      .from("courses")
-      .select("*")
-      .eq("code", normalizedCode)
-      .eq("number", normalizedNumber)
-      .limit(1)
-      .single();
+    .from("courses")
+    .select("*, course_eligible_attributes ( attribute )")
+    .eq("code", normalizedCode)
+    .eq("number", normalizedNumber)
+    .limit(1)
+    .single();
 
     if (error || !data) {
       setMessage({ text: "Course not found.", type: "error" });
@@ -352,21 +352,38 @@ export default function Prerequisite({
     }
   }
 
-  async function assignCourseToSemester(course, semesterId) {
-    const { error } = await supabase.from("user_courses").insert({
-      user_id: userId,
-      course_id: course.id,
-      semester_id: semesterId,
-      status: "enrolled",
-      grade: null,
-      attribute: "Major Course",
-    });
+async function assignCourseToSemester(course, semesterId) {
+  const ELIGIBLE_TO_ATTRIBUTE = {
+    "Engl. Communication": "Engl. Communication",
+    "Arab. Communication": "Arab. Communication",
+    "Human Values": "Human Values",
+    "Cultures & Histories": "Cultures & Histories",
+    "Societies & Individuals": "Societies & Individuals",
+    "Understanding the World": "Understanding the World",
+    "Technical Elective": "Technical Elective",
+    "CEL": "CEL",
+  };
 
-    console.log("insert error:", error);
-    return error;
-  }
+  const eligibleAttrs = course.course_eligible_attributes || [];
+  const firstEligible = eligibleAttrs[0]?.attribute;
+  const attribute =
+    firstEligible && ELIGIBLE_TO_ATTRIBUTE[firstEligible]
+      ? ELIGIBLE_TO_ATTRIBUTE[firstEligible]
+      : "Major Course";
+  const { error } = await supabase.from("user_courses").insert({
+    user_id: userId,
+    course_id: course.id,
+    semester_id: semesterId,
+    status: "enrolled",
+    grade: null,
+    attribute,
+  });
 
-  if (loading) return <div className="prereq-loading">Loading…</div>;
+  console.log("insert error:", error);
+  return error;
+} 
+
+ if (loading) return <div className="prereq-loading">Loading…</div>;
 
   const creditStatus =
     currentCredits < MIN_CREDITS
