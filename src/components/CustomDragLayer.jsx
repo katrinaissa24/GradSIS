@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useDragLayer } from "react-dnd";
-import CourseCard from "./CourseCard";
 
 function isScrollable(element) {
   if (!element) return false;
   const style = window.getComputedStyle(element);
   const overflowY = style.overflowY;
+
   return (
     (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
     element.scrollHeight > element.clientHeight
@@ -164,8 +164,7 @@ export default function CustomDragLayer({ isMobile = false }) {
         speed = -BASE_MAX_SPEED * (1 - (offset.y - top) / EDGE_SIZE);
       } else if (offset.y > bottom - EDGE_SIZE) {
         direction = 1;
-        speed =
-          BASE_MAX_SPEED * ((offset.y - (bottom - EDGE_SIZE)) / EDGE_SIZE);
+        speed = BASE_MAX_SPEED * ((offset.y - (bottom - EDGE_SIZE)) / EDGE_SIZE);
       }
 
       if (direction !== 0) {
@@ -184,7 +183,6 @@ export default function CustomDragLayer({ isMobile = false }) {
       }
 
       scrollContainer(container, speed);
-
       frameRef.current = window.requestAnimationFrame(tick);
     };
 
@@ -211,20 +209,6 @@ export default function CustomDragLayer({ isMobile = false }) {
   const style = buildPreviewStyle(displayOffset, item, isMobile);
 
   if (itemType === "COURSE") {
-    if (!isMobile) {
-      return (
-        <div style={style}>
-          <CourseCard
-            course={item.course}
-            semesterStatus={item.course?.semester_status || "present"}
-            updateCourse={() => {}}
-            deleteCourse={() => {}}
-            dragPreview
-          />
-        </div>
-      );
-    }
-
     return (
       <div style={style}>
         <MinimalCoursePreview
@@ -238,29 +222,6 @@ export default function CustomDragLayer({ isMobile = false }) {
   }
 
   if (itemType === "SIDEBAR_COURSE") {
-    if (!isMobile && item.course) {
-      return (
-        <div style={style}>
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 10,
-              background: "#fff",
-              boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
-              border: "2px solid #111",
-              width: "100%",
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{item.course.code}</div>
-            <div style={{ fontSize: 13, color: "#374151" }}>{item.course.name}</div>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-              Credits: {item.course.credits}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div style={style}>
         {item.course ? (

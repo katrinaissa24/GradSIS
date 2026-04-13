@@ -134,7 +134,11 @@ const DND_OPTIONS = {
     {
       id: "touch",
       backend: TouchBackend,
-      options: { enableMouseEvents: false, delayTouchStart: 100, touchSlop: 5 },
+      options: {
+        enableMouseEvents: false,
+        delayTouchStart: 100,
+        touchSlop: 5,
+      },
       preview: true,
       transition: TouchTransition,
     },
@@ -255,18 +259,6 @@ function createDashboardProfiler(label) {
   };
 }
 
-function supportsTouchInput() {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return false;
-  }
-
-  return (
-    "ontouchstart" in window ||
-    navigator.maxTouchPoints > 0 ||
-    window.matchMedia?.("(pointer: coarse)")?.matches === true
-  );
-}
-
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
@@ -283,7 +275,6 @@ export default function Dashboard() {
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
-  const [hasTouchInput, setHasTouchInput] = useState(() => supportsTouchInput());
   const [isTabletLayout, setIsTabletLayout] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= TABLET_BREAKPOINT
@@ -865,7 +856,6 @@ export default function Dashboard() {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
       setIsTabletLayout(window.innerWidth <= TABLET_BREAKPOINT);
-      setHasTouchInput(supportsTouchInput());
     };
 
     handleResize();
@@ -1625,7 +1615,7 @@ const attributeToUse =
   }
 
   return (
-    <DashboardDndProvider useTouchBackend={hasTouchInput}>
+    <DashboardDndProvider isMobile={isMobile}>
       <DragLayerHost isMobile={isMobile} />
 
       <div style={{ background: "#f4f4f5", minHeight: "100vh", color: "#111" }}>
@@ -2193,10 +2183,6 @@ const attributeToUse =
   );
 }
 
-// Stable DragDropManager that survives React 18 StrictMode double-mount.
-// Without this, StrictMode tears down the HTML5Backend event listeners on the
-// simulated unmount and the backend never re-registers them, breaking all
-// drag-and-drop on desktop.
 let _desktopDndManager = null;
 function getDesktopDndManager() {
   if (!_desktopDndManager) {
@@ -2205,8 +2191,8 @@ function getDesktopDndManager() {
   return _desktopDndManager;
 }
 
-function DashboardDndProvider({ children, useTouchBackend }) {
-  if (useTouchBackend) {
+function DashboardDndProvider({ children, isMobile }) {
+  if (isMobile) {
     return <MultiDndProvider options={DND_OPTIONS}>{children}</MultiDndProvider>;
   }
 
