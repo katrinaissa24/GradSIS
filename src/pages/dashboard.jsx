@@ -270,6 +270,7 @@ export default function Dashboard() {
   const [addingSemester, setAddingSemester] = useState(false);
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [planCache, setPlanCache] = useState({});
   const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
   const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
@@ -543,8 +544,7 @@ export default function Dashboard() {
           .from("plans")
           .select("*")
           .eq("user_id", userId)
-          .order("created_at", { ascending: true });
-
+          .order("name", { ascending: true });
         const [
           { data: userRow, error: userRowError },
           { data: fetchedPlans, error: plansError },
@@ -609,6 +609,14 @@ export default function Dashboard() {
           profiler.end();
           return;
         }
+
+        if (silent && planCache[activePlanId]) {
+          setSemesters(planCache[activePlanId]);
+          setLoading(false);
+          profiler.step("cache-hit");
+          profiler.end();
+          return;
+}
 
         const { data: userSemesters, error: semestersError } = await supabase
           .from("user_semesters")
@@ -687,6 +695,10 @@ export default function Dashboard() {
         }));
 
         setSemesters(formattedSemesters);
+        setPlanCache((prev) => ({
+          ...prev,
+          [activePlanId]: formattedSemesters,
+        }));
         setLoading(false);
         profiler.step("state-commit");
         profiler.end();
@@ -954,6 +966,17 @@ export default function Dashboard() {
     updateSemesterById(id, (semester) => {
       if (semester.status === newStatus) return semester;
       return { ...semester, status: newStatus };
+    });
+
+    setPlanCache((prev) => {
+      if (!selectedPlanId || !prev[selectedPlanId]) return prev;
+
+      return {
+        ...prev,
+        [selectedPlanId]: prev[selectedPlanId].map((semester) =>
+          semester.id === id ? { ...semester, status: newStatus } : semester
+        ),
+      };
     });
 
     const { error } = await supabase
@@ -1445,7 +1468,19 @@ const attributeToUse =
         throw error;
       }
 
-      setSemesters((prev) => [...prev, { ...data, user_courses: [] }]);
+      const newSemester = { ...data, user_courses: [] };
+
+      setSemesters((prev) => {
+        const updated = [...prev, newSemester];
+
+        setPlanCache((cachePrev) => ({
+          ...cachePrev,
+          [selectedPlanId]: updated,
+        }));
+
+        return updated;
+      });
+
       setNewSemesterName("");
     } catch (err) {
       console.error("Error adding semester:", err);
