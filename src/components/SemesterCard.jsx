@@ -140,7 +140,7 @@ export default function SemesterCard({
         position: "relative",
         display: "inline-flex",
         alignItems: "center",
-        width: isMobile ? "100%" : "auto",
+        width: isMobile ? "100%" : 120,
       }}
     >
       <select
@@ -153,8 +153,8 @@ export default function SemesterCard({
         aria-label="Class standing"
         title="Class standing for this semester"
         style={{
-          width: isMobile ? 96 : "auto",
-          height: compactHeight,
+          width: isMobile ? "100%" : 120,
+          height: isMobile ? compactHeight : 34,
           padding: isMobile ? "0 24px 0 8px" : "0 32px 0 12px",
           borderRadius: 8,
           border: "1px solid #d1d5db",
@@ -548,19 +548,19 @@ export default function SemesterCard({
                   textOverflow: "ellipsis",
                 }}
               >
-                Semester
+                {semester.name || "Semester"}
               </h3>
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  flex: "0 0 auto",
-                  flexWrap: "nowrap",
-                  justifyContent: "flex-end",
-                }}
-              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flex: "0 0 auto",
+                    flexWrap: "nowrap",
+                    justifyContent: "flex-end",
+                  }}
+                >
                 <button
                   type="button"
                   onClick={() => updateLock?.(semester.id, !isLocked)}
@@ -619,8 +619,8 @@ export default function SemesterCard({
 
                 <div
                   style={{
-                    width: 180,
-                    flex: "0 0 180px",
+                    width: 120,
+                    flex: "0 0 120px",
                   }}
                 >
                   {studentStatusSelect}
