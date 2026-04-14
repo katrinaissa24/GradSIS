@@ -90,6 +90,14 @@ export default function SemesterCard({
     function calculateDifficulty() {
       if (!semester.user_courses.length) return;
 
+      if (semester.user_courses.length <= 2) {
+        setSemesterDifficulty(0.5);
+        setMissingRatings(false);
+        return;
+      }
+
+      if (!semester.user_courses.length) return;
+
       let totalWeightedDifficulty = 0;
       let totalCredits = 0;
       let missing = false;

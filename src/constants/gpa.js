@@ -41,8 +41,7 @@ export function calculateCumulativeGPAWithRepeats(allCourses, semesters) {
   });
 
   if (!totalCredits) return "0.00";
-  return (totalPoints / totalCredits).toFixed(2);
-}
+    return (Math.floor((totalPoints / totalCredits) * 100) / 100).toFixed(2);}
 
 export function calculateGPACreditHours(allCourses, semesters) {
   const latestGradedAttempts = getLatestGradedAttempts(allCourses, semesters);

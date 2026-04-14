@@ -53,6 +53,7 @@ export default function SettingsPage() {
   const [hours, setHours] = useState(0);
   const [completed, setCompleted] = useState(0);
   const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
   const [majors, setMajors] = useState([]);
   const [startingTerms, setStartingTerms] = useState([]);
   const [savingPlan, setSavingPlan] = useState(null);
@@ -112,11 +113,6 @@ export default function SettingsPage() {
           .eq("user_id", user.id)
           .order("created_at", { ascending: true });
 
-        const semestersPromise = supabase
-          .from("user_semesters")
-          .select("id")
-          .eq("user_id", user.id);
-
         const majorsPromise = supabase
           .from("majors")
           .select("*")
@@ -130,10 +126,9 @@ export default function SettingsPage() {
         const [
           { data: userRow },
           { data: planRows },
-          { data: userSemesters },
           { data: majorsData },
           { data: termsData },
-        ] = await Promise.all([userPromise, plansPromise, semestersPromise, majorsPromise, startingTermsPromise]);
+        ] = await Promise.all([userPromise, plansPromise, majorsPromise, startingTermsPromise]);
 
         if (cancelled) return;
         setMajors(majorsData || []);
@@ -167,51 +162,88 @@ export default function SettingsPage() {
         });
         setPlans(normalizedPlans);
 
-        // Pull all courses across user's semesters for GPA + completed credits
-        const semIds = (userSemesters || []).map((s) => s.id);
-        let allCourses = [];
-        let semestersForGpa = [];
-        if (semIds.length) {
-          const { data: courses } = await supabase
-            .from("user_courses")
-            .select(
-              `
-              *,
-              courses ( id, name, code, number, credits )
-              `,
-            )
-            .in("semester_id", semIds);
-          allCourses = courses || [];
+        if (normalizedPlans.length > 0) {
+                setSelectedPlanId(normalizedPlans[0].id);
+              }
 
-          // group for cumulative GPA function
-          const grouped = allCourses.reduce((acc, c) => {
-            (acc[c.semester_id] ||= []).push(c);
-            return acc;
-          }, {});
-          semestersForGpa = semIds.map((id) => ({
-            id,
-            user_courses: grouped[id] || [],
-          }));
+              
+            } catch (err) {
+              console.error("Failed to load settings:", err);
+            } finally {
+              if (!cancelled) setLoading(false);
+            }
+          }
+          load();
+          return () => {
+            cancelled = true;
+          };
+        }, [navigate]);
+
+        useEffect(() => {
+        let cancelled = false;
+
+        async function loadPlanStats() {
+          if (!authUser?.id || !selectedPlanId) return;
+
+          try {
+            const { data: userSemesters, error: semestersError } = await supabase
+              .from("user_semesters")
+              .select("id")
+              .eq("user_id", authUser.id)
+              .eq("plan_id", selectedPlanId);
+
+            if (semestersError) throw semestersError;
+
+            const semIds = (userSemesters || []).map((s) => s.id);
+
+            if (!semIds.length) {
+              if (cancelled) return;
+              setGpa("0.00");
+              setHours(0);
+              setCompleted(0);
+              return;
+            }
+
+            const { data: courses, error: coursesError } = await supabase
+              .from("user_courses")
+              .select(`
+                *,
+                courses ( id, name, code, number, credits )
+              `)
+              .in("semester_id", semIds);
+
+            if (coursesError) throw coursesError;
+
+            const allCourses = courses || [];
+
+            const grouped = allCourses.reduce((acc, c) => {
+              (acc[c.semester_id] ||= []).push(c);
+              return acc;
+            }, {});
+
+            const semestersForGpa = semIds.map((id) => ({
+              id,
+              user_courses: grouped[id] || [],
+            }));
+
+            if (cancelled) return;
+
+            setGpa(
+              calculateCumulativeGPAWithRepeats(allCourses, semestersForGpa) || "0.00"
+            );
+            setHours(calculateGPACreditHours(allCourses, semestersForGpa) || 0);
+            setCompleted(calcCompletedCredits(semestersForGpa));
+          } catch (err) {
+            console.error("Failed to load plan stats:", err);
+          }
         }
 
-        if (cancelled) return;
-        setGpa(
-          calculateCumulativeGPAWithRepeats(allCourses, semestersForGpa) ||
-            "0.00",
-        );
-        setHours(calculateGPACreditHours(allCourses, semestersForGpa) || 0);
-        setCompleted(calcCompletedCredits(semestersForGpa));
-      } catch (err) {
-        console.error("Failed to load settings:", err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
+        loadPlanStats();
+
+        return () => {
+          cancelled = true;
+        };
+      }, [authUser?.id, selectedPlanId]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -570,6 +602,37 @@ export default function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Account information */}
             <Section title="Account Information">
+              <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  color: "#6b7280",
+                  marginBottom: 6,
+                }}
+              >
+                View stats for plan
+              </label>
+
+              <select
+                value={selectedPlanId}
+                onChange={(e) => setSelectedPlanId(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  fontSize: 14,
+                }}
+              >
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </select>
+            </div>
               <Row label="Name" value={profile.name || "\u2014"} />
               <Row label="Email" value={profile.email || "\u2014"} />
               <Row label="Major" value={profile.major || "\u2014"} />

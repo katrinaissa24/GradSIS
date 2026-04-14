@@ -1211,6 +1211,7 @@ export default function Dashboard() {
     }
 
     const targetSemester = semesters.find((s) => s.id === semesterId);
+    const currentPlanId = targetSemester?.plan_id || selectedPlanId;
     const targetSemCourses = targetSemester?.user_courses || [];
 
     if (course) {
@@ -1234,23 +1235,41 @@ export default function Dashboard() {
       }
 
       if (prereqs?.length > 0) {
-        const { data: freshUserCourses, error: freshUserCoursesError } =
-          await supabase
-            .from("user_courses")
-            .select("course_id, grade")
-            .eq("user_id", authUser.id);
+  const { data: currentPlanSemesters, error: currentPlanSemestersError } =
+    await supabase
+      .from("user_semesters")
+      .select("id")
+      .eq("user_id", authUser.id)
+      .eq("plan_id", currentPlanId);
+  if (currentPlanSemestersError) {
+    alert("Error checking plan semesters.");
+    return;
+  }
 
-        if (freshUserCoursesError) {
-          alert("Error checking completed courses.");
-          return;
-        }
+  const currentPlanSemesterIds = (currentPlanSemesters || [])
+    .map((s) => s.id)
+    .filter(Boolean);
 
-        const freshPassedCourseIds = new Set(
-          (freshUserCourses || [])
-            .filter((c) => PASSING_GRADES.has(c.grade))
-            .map((c) => c.course_id)
-            .filter(Boolean),
-        );
+  const { data: freshUserCourses, error: freshUserCoursesError } =
+    currentPlanSemesterIds.length > 0
+      ? await supabase
+          .from("user_courses")
+          .select("course_id, grade, semester_id")
+          .eq("user_id", authUser.id)
+          .in("semester_id", currentPlanSemesterIds)
+      : { data: [], error: null };
+
+  if (freshUserCoursesError) {
+    alert("Error checking completed courses.");
+    return;
+  }
+
+  const freshPassedCourseIds = new Set(
+    (freshUserCourses || [])
+      .filter((c) => PASSING_GRADES.has(c.grade))
+      .map((c) => c.course_id)
+      .filter(Boolean),
+  );
 
         const missing = prereqs.filter(
           (p) => !freshPassedCourseIds.has(p.prereq_course_id),
@@ -1427,8 +1446,7 @@ const attributeToUse =
         user_courses: nextCourses,
       };
     });
-  }, [authUser?.id, semesters, updateSemesterById]);
-
+}, [authUser?.id, selectedPlanId, semesters, updateSemesterById]);
   async function handleAddSemester() {
     const trimmedName = newSemesterName.trim();
     if (!trimmedName) {
