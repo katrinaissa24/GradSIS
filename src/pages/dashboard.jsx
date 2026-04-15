@@ -1391,9 +1391,21 @@ function calcMajorRequirementsProgress(semesterList, allUserCourses, prerequisit
       .filter(Boolean),
   );
 
-        const missing = prereqs.filter(
-          (p) => !freshPassedCourseIds.has(p.prereq_course_id),
-        );
+     // Check prerequisites - allow passed OR planned (except F/W/WF grades)
+const prerequisiteMet = new Set();
+
+for (const userCourse of freshUserCourses || []) {
+  const grade = userCourse.grade ? String(userCourse.grade).trim().toUpperCase() : null;
+  
+  // Count as met if: passed, planned (no grade), or any grade except F/W/WF
+  if (!grade || PASSING_GRADES.has(grade) || (grade && grade !== "F" && grade !== "W" && grade !== "WF"&& grade !== "Fail" && grade !== "FAIL")) {
+    prerequisiteMet.add(userCourse.course_id);
+  }
+}
+
+const missing = prereqs.filter(
+  (p) => !prerequisiteMet.has(p.prereq_course_id),
+);
 
         if (missing.length > 0) {
           const { data: missingCourses } = await supabase
