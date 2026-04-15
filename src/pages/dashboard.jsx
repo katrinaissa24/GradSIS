@@ -43,13 +43,13 @@ const LOAD_CONFIG = {
   overload: { targetCredits: 21 },
 };
 const MAJOR_REQUIRED_COURSES = [
-  { code: "CMPS", number: "201", name: "Programming & Problem Solving II" },
+  { code: "CMPS", number: "201", name: "Introduction to Programming" },
   { code: "CMPS", number: "202", name: "Data Structures" },
-  { code: "CMPS", number: "214", name: "Digital Logic Design" },
-  { code: "CMPS", number: "215", name: "Computer Organization" },
-  { code: "CMPS", number: "221", name: "Algorithms" },
-  { code: "CMPS", number: "240", name: "Systems Programming" },
-  { code: "CMPS", number: "241", name: "Operating Systems" },
+  { code: "CMPS", number: "214", name: "Analysis of Algorithms" },
+  { code: "CMPS", number: "215", name: "Theory of Computation" },
+  { code: "CMPS", number: "221", name: "Computer Architecture" },
+  { code: "CMPS", number: "240", name: "Operating Systems" },
+  { code: "CMPS", number: "241", name: "Systems Programing" },
   { code: "CMPS", number: "271", name: "Software Engineering" },
   { code: "CMPS", number: "211", name: "Discrete Structures" }, // Alternative handled separately
   { code: "MATH", number: "201", name: "Calculus and Analytical Geometry" },
@@ -1391,14 +1391,15 @@ function calcMajorRequirementsProgress(semesterList, allUserCourses, prerequisit
       .filter(Boolean),
   );
 
-     // Check prerequisites - allow passed OR planned (except F/W/WF grades)
+// Check prerequisites - allow all grades EXCEPT F/W/WF/FAIL
 const prerequisiteMet = new Set();
+const FAILED_GRADES = new Set(["F", "W", "WF", "FAIL"]);
 
 for (const userCourse of freshUserCourses || []) {
   const grade = userCourse.grade ? String(userCourse.grade).trim().toUpperCase() : null;
   
-  // Count as met if: passed, planned (no grade), or any grade except F/W/WF
-  if (!grade || PASSING_GRADES.has(grade) || (grade && grade !== "F" && grade !== "W" && grade !== "WF"&& grade !== "Fail" && grade !== "FAIL")) {
+  // Count as met if: no grade (planned) OR any grade that's NOT failed/withdrawn
+  if (!grade || !FAILED_GRADES.has(grade)) {
     prerequisiteMet.add(userCourse.course_id);
   }
 }
