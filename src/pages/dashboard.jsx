@@ -493,26 +493,29 @@ function calcMajorRequirementsProgress(semesterList, allUserCourses, prerequisit
     const reqNumber = normalizeString(req.number);
     
     // Find if any user_course matches this requirement
-    for (const uc of allUserCourses) {
-      const { code, number } = getCourseCodeAndNumber(uc);
-      
-      if (!code || !number) continue;
-      
-      // If this is the discrete math alternative requirement
-      if (reqCode === "CMPS" && reqNumber === "211") {
-        // Check for either CMPS 211 OR MATH 211
-        if ((code === "CMPS" && number === "211") || (code === "MATH" && number === "211")) {
-          match = uc;
-          break;
-        }
-      } else {
-        // Normal single course requirement
-        if (code === reqCode && number === reqNumber) {
-          match = uc;
-          break;
-        }
-      }
+// Prioritize passing grades over failed grades
+for (const uc of allUserCourses) {
+  const { code, number } = getCourseCodeAndNumber(uc);
+  
+  if (!code || !number) continue;
+  
+  const grade = normalizeString(uc.grade);
+  const isMatch = (reqCode === "CMPS" && reqNumber === "211") 
+    ? ((code === "CMPS" && number === "211") || (code === "MATH" && number === "211"))
+    : (code === reqCode && number === reqNumber);
+  
+  if (isMatch) {
+    // If this is a passing grade, use it immediately
+    if (PASSING_GRADES.has(grade)) {
+      match = uc;
+      break;
     }
+    // Otherwise, keep first match but continue searching for better one
+    if (!match) {
+      match = uc;
+    }
+  }
+}
 
     if (!match) {
       return { ...req, status: "missing", grade: null };
