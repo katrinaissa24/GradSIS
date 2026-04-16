@@ -285,15 +285,21 @@ export default function Prerequisite({
           return;
         }
 
-        const freshPassedCourseIds = (freshUserCourses || [])
-          .filter((c) => PASSED_GRADES.includes(c.grade)||
-    c.status === "enrolled" ||
-    c.status === "completed")
-          .map((c) => c.course_id);
+        const FAILED_GRADES = new Set(["F", "W", "WF", "FAIL"]);
 
-        const missing = prereqs.filter(
-          (p) => !freshPassedCourseIds.includes(p.prereq_course_id),
-        );
+const freshPassedCourseIds = (freshUserCourses || [])
+  .filter((c) => {
+    const grade = c.grade ? String(c.grade).trim().toUpperCase() : null;
+    // Allow if: no grade (planned), passed grade, enrolled, or completed
+    // Block if: F, W, WF, or FAIL
+    if (grade && FAILED_GRADES.has(grade)) return false;
+    return PASSED_GRADES.includes(c.grade) || c.status === "enrolled" || c.status === "completed";
+  })
+  .map((c) => c.course_id);
+
+const missing = prereqs.filter(
+  (p) => !freshPassedCourseIds.includes(p.prereq_course_id),
+);
 
         if (missing.length > 0) {
           const { data: missingCourses, error: nameError } = await supabase
