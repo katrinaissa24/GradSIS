@@ -1251,7 +1251,65 @@ for (const uc of allUserCourses) {
   }, []);
 
   const moveCourse = useCallback(async (courseId, fromSemesterId, toSemesterId) => {
-    if (fromSemesterId === toSemesterId) return;
+    if (fromSemesterId === toSemesterId) return false;
+
+    const targetSemester = semesters.find((semester) => semester.id === toSemesterId);
+    const sourceSemester = semesters.find((semester) => semester.id === fromSemesterId);
+    const movingCourse =
+      sourceSemester?.user_courses?.find((course) => course.id === courseId) || null;
+
+    if (!targetSemester || !movingCourse) {
+      return false;
+    }
+
+    if (movingCourse.course_id) {
+      const { data: prereqs, error: prereqError } = await supabase
+        .from("prerequisites")
+        .select("prereq_course_id")
+        .eq("course_id", movingCourse.course_id);
+
+      if (prereqError) {
+        console.error("Failed to check prerequisites before move:", prereqError);
+        alert("Error checking prerequisites.");
+        return false;
+      }
+
+      const targetSemesterNumber = Number(targetSemester.semester_number ?? 0);
+      const missingPrereqIds = (prereqs || [])
+        .map((prereq) => prereq.prereq_course_id)
+        .filter(Boolean)
+        .filter((prereqCourseId) => {
+          if (passedCourseIds.has(prereqCourseId)) {
+            return false;
+          }
+
+          return !semesters.some((semester) => {
+            const semesterNumber = Number(semester.semester_number ?? 0);
+
+            if (semesterNumber >= targetSemesterNumber) {
+              return false;
+            }
+
+            return (semester.user_courses || []).some(
+              (course) => course.id !== courseId && course.course_id === prereqCourseId,
+            );
+          });
+        });
+
+      if (missingPrereqIds.length > 0) {
+        const { data: missingCourses } = await supabase
+          .from("courses")
+          .select("id, code, number, name")
+          .in("id", missingPrereqIds);
+
+        alert(
+          `Cannot move course. Missing prerequisites: ${(missingCourses || [])
+            .map((course) => `${course.code} ${course.number} - ${course.name}`)
+            .join(", ")}`,
+        );
+        return false;
+      }
+    }
 
     updateSemesterList((prev) => {
       let movedCourse = null;
@@ -1301,8 +1359,11 @@ for (const uc of allUserCourses) {
     if (error) {
       console.error("Failed to move course:", error);
       await initialize(true, selectedPlanId);
+      return false;
     }
-  }, [selectedPlanId, updateSemesterList]);
+
+    return true;
+  }, [initialize, passedCourseIds, selectedPlanId, semesters, updateSemesterList]);
 
   const deleteCourse = useCallback(async (courseId) => {
     updateSemesterContainingCourse(courseId, (semester) => {
