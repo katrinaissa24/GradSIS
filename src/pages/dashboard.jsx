@@ -1266,7 +1266,7 @@ for (const uc of allUserCourses) {
       const { data: prereqs, error: prereqError } = await supabase
   .from("prerequisites")
   .select("prereq_course_id, group_id")
-  .eq("course_id", course.id);
+  .eq("course_id", movingCourse.course_id);
 
       if (prereqError) {
         console.error("Failed to check prerequisites before move:", prereqError);
