@@ -39,10 +39,10 @@ export default function Prerequisite({
   const [existingReview, setExistingReview] = useState(null);
 
   const LOAD_RULES = {
-    underload: { min: 0, max: 12, label: "Underload" },
-    normal: { min: 13, max: 17, label: "Normal" },
-    overload: { min: 18, max: Math.max(targetCredits, 24), label: "Overload" },
-  };
+  underload: { min: 0, max: 12, label: "Underload" },
+  normal: { min: 13, max: 17, label: "Normal" },
+  overload: { min: 18, max: 21, label: "Overload" },
+};
 
   const activeLoadRule = LOAD_RULES[loadMode] || LOAD_RULES.normal;
   const MIN_CREDITS = activeLoadRule.min;
@@ -258,10 +258,9 @@ export default function Prerequisite({
       }
 
       const { data: prereqs, error: prereqError } = await supabase
-        .from("prerequisites")
-        .select("prereq_course_id")
-        .eq("course_id", selectedCourse.id);
-
+  .from("prerequisites")
+  .select("prereq_course_id, group_id")
+  .eq("course_id", selectedCourse.id);
       if (prereqError) {
         setMessage({
           text: "Error checking prerequisites. Please try again.",
@@ -290,16 +289,31 @@ export default function Prerequisite({
 const freshPassedCourseIds = (freshUserCourses || [])
   .filter((c) => {
     const grade = c.grade ? String(c.grade).trim().toUpperCase() : null;
-    // Allow if: no grade (planned), passed grade, enrolled, or completed
-    // Block if: F, W, WF, or FAIL
     if (grade && FAILED_GRADES.has(grade)) return false;
     return PASSED_GRADES.includes(c.grade) || c.status === "enrolled" || c.status === "completed";
   })
   .map((c) => c.course_id);
 
-const missing = prereqs.filter(
-  (p) => !freshPassedCourseIds.includes(p.prereq_course_id),
-);
+// Group prerequisites by group_id
+const groupedPrereqs = {};
+for (const prereq of prereqs) {
+  const groupId = prereq.group_id || "default";
+  if (!groupedPrereqs[groupId]) {
+    groupedPrereqs[groupId] = [];
+  }
+  groupedPrereqs[groupId].push(prereq.prereq_course_id);
+}
+
+// Check if at least one course from each group is satisfied
+const missingGroups = [];
+for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
+  const hasAtLeastOne = courseIds.some((courseId) => freshPassedCourseIds.includes(courseId));
+  if (!hasAtLeastOne) {
+    missingGroups.push(...courseIds);
+  }
+}
+
+const missing = missingGroups.length > 0 ? missingGroups : [];
 
         if (missing.length > 0) {
           const { data: missingCourses, error: nameError } = await supabase
@@ -307,7 +321,7 @@ const missing = prereqs.filter(
             .select("id, code, number, name")
             .in(
               "id",
-              missing.map((m) => m.prereq_course_id),
+              missing,
             );
 
           if (nameError) {
