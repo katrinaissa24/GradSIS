@@ -1264,9 +1264,9 @@ for (const uc of allUserCourses) {
 
     if (movingCourse.course_id) {
       const { data: prereqs, error: prereqError } = await supabase
-        .from("prerequisites")
-        .select("prereq_course_id")
-        .eq("course_id", movingCourse.course_id);
+  .from("prerequisites")
+  .select("prereq_course_id, group_id")
+  .eq("course_id", course.id);
 
       if (prereqError) {
         console.error("Failed to check prerequisites before move:", prereqError);
@@ -1409,9 +1409,9 @@ for (const uc of allUserCourses) {
       }
 
       const { data: prereqs, error: prereqError } = await supabase
-        .from("prerequisites")
-        .select("prereq_course_id")
-        .eq("course_id", course.id);
+  .from("prerequisites")
+  .select("prereq_course_id, group_id")
+  .eq("course_id", course.id);
 
       if (prereqError) {
         alert("Error checking prerequisites.");
@@ -1468,18 +1468,32 @@ for (const userCourse of freshUserCourses || []) {
   }
 }
 
-const missing = prereqs.filter(
-  (p) => !prerequisiteMet.has(p.prereq_course_id),
-);
+// Group prerequisites by group_id
+const groupedPrereqs = {};
+for (const prereq of prereqs) {
+  const groupId = prereq.group_id || "default";
+  if (!groupedPrereqs[groupId]) {
+    groupedPrereqs[groupId] = [];
+  }
+  groupedPrereqs[groupId].push(prereq.prereq_course_id);
+}
 
-        if (missing.length > 0) {
-          const { data: missingCourses } = await supabase
-            .from("courses")
-            .select("id, code, number, name")
-            .in(
-              "id",
-              missing.map((m) => m.prereq_course_id),
-            );
+// Check if at least one course from each group is satisfied
+const missingGroups = [];
+for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
+  const hasAtLeastOne = courseIds.some((courseId) => prerequisiteMet.has(courseId));
+  if (!hasAtLeastOne) {
+    missingGroups.push(...courseIds);
+  }
+}
+        if (missingGroups.length > 0) {
+  const { data: missingCourses } = await supabase
+    .from("courses")
+    .select("id, code, number, name")
+    .in(
+      "id",
+      [...new Set(missingGroups)],
+    );
 
           alert(
             `Missing prerequisites: ${(missingCourses || [])
