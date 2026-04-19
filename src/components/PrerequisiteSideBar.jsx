@@ -536,6 +536,7 @@ function PrerequisiteSidebar({
 
           {/* Attribute filter toggle */}
           <div style={{ padding: "6px 14px 0", position: "relative" }}>
+            {/*
             <button
               onClick={() => setShowAttributeFilter((v) => !v)}
               style={{
@@ -571,6 +572,7 @@ function PrerequisiteSidebar({
                 </span>
               )}
             </button>
+            */}
 
             {showAttributeFilter && (
               <div
