@@ -218,12 +218,7 @@ export default function SemesterCard({
 
       if (item.course.semester_id === semester.id) return;
 
-      moveCourse(item.course.id, item.course.semester_id, semester.id);
-
-      await supabase
-        .from("user_courses")
-        .update({ semester_id: semester.id })
-        .eq("id", item.course.id);
+      await moveCourse(item.course.id, item.course.semester_id, semester.id);
       setRefreshKey((key) => key + 1);
     },
     collect: (monitor) => ({

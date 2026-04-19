@@ -110,11 +110,14 @@ export default function CourseCard({
     }
 
     setAttributeWarning(null);
-    updateCourse(course.id, field, value);
+    const normalizedValue =
+      field === "grade" && value === "" ? null : value;
+
+    updateCourse(course.id, field, normalizedValue);
 
     const { error } = await supabase
       .from("user_courses")
-      .update({ [field]: value })
+      .update({ [field]: normalizedValue })
       .eq("id", course.id);
 
     if (error) {

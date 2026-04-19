@@ -42,6 +42,21 @@ const LOAD_CONFIG = {
   normal: { targetCredits: 17 },
   overload: { targetCredits: 21 },
 };
+const MAJOR_REQUIRED_COURSES = [
+  { code: "CMPS", number: "201", name: "Introduction to Programming" },
+  { code: "CMPS", number: "202", name: "Data Structures" },
+  { code: "CMPS", number: "214", name: "Analysis of Algorithms" },
+  { code: "CMPS", number: "215", name: "Theory of Computation" },
+  { code: "CMPS", number: "221", name: "Computer Architecture" },
+  { code: "CMPS", number: "240", name: "Operating Systems" },
+  { code: "CMPS", number: "241", name: "Systems Programing" },
+  { code: "CMPS", number: "271", name: "Software Engineering" },
+  { code: "CMPS", number: "211", name: "Discrete Structures" }, // Alternative handled separately
+  { code: "MATH", number: "201", name: "Calculus and Analytical Geometry" },
+  { code: "MATH", number: "218", name: "Linear Algebra" },
+  { code: "STAT", number: "230", name: "Introduction to Probability and Random Variables" }
+];
+const CMPS_ELECTIVE_CREDITS_REQUIRED =18; // 18 credits of CMPS electives
 const NO_OVERLOAD_STATUSES = new Set(["freshman", "sophomore"]);
 
 function isRegularTerm(semester) {
@@ -274,6 +289,7 @@ export default function Dashboard() {
   const [mobileCatalogOpen, setMobileCatalogOpen] = useState(false);
   const [mobileElectivesOpen, setMobileElectivesOpen] = useState(false);
   const [mobileQuickAddSemesterId, setMobileQuickAddSemesterId] = useState("");
+  const [mobileMajorReqOpen, setMobileMajorReqOpen] = useState(false);
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
   const [isTabletLayout, setIsTabletLayout] = useState(() =>
@@ -438,7 +454,114 @@ export default function Dashboard() {
 
     return { completed, total };
   }
+function calcMajorRequirementsProgress(semesterList, allUserCourses, prerequisiteCourses = []) {
+  const EXCLUDED = new Set(["F", "W", "WF", "FAIL"]);
 
+  function normalizeString(val) {
+    return val ? String(val).trim().toUpperCase() : null;
+  }
+
+  // Helper function to get course code and number from a user_course
+  function getCourseCodeAndNumber(uc) {
+    // Method 1: Check courses nested object
+    let code = uc.courses?.code;
+    let number = uc.courses?.number;
+    
+    // Method 2: Check direct properties
+    if (!code && uc.code) code = uc.code;
+    if (!number && uc.number) number = uc.number;
+    
+    // Method 3: Look up from prerequisiteCourses using course_id
+    if ((!code || !number) && uc.course_id) {
+      const fullCourse = prerequisiteCourses.find(c => c.id === uc.course_id);
+      if (fullCourse) {
+        code = fullCourse.code;
+        number = fullCourse.number;
+      }
+    }
+    
+    return { 
+      code: normalizeString(code),
+      number: normalizeString(number)
+    };
+  }
+
+  // Check required courses - handle alternatives (like CMPS 211 OR MATH 211)
+  const requiredRows = MAJOR_REQUIRED_COURSES.map((req) => {
+    let match = null;
+    const reqCode = normalizeString(req.code);
+    const reqNumber = normalizeString(req.number);
+    
+    // Find if any user_course matches this requirement
+// Prioritize passing grades over failed grades
+for (const uc of allUserCourses) {
+  const { code, number } = getCourseCodeAndNumber(uc);
+  
+  if (!code || !number) continue;
+  
+  const grade = normalizeString(uc.grade);
+  const isMatch = (reqCode === "CMPS" && reqNumber === "211") 
+    ? ((code === "CMPS" && number === "211") || (code === "MATH" && number === "211"))
+    : (code === reqCode && number === reqNumber);
+  
+  if (isMatch) {
+    // If this is a passing grade, use it immediately
+    if (PASSING_GRADES.has(grade)) {
+      match = uc;
+      break;
+    }
+    // Otherwise, keep first match but continue searching for better one
+    if (!match) {
+      match = uc;
+    }
+  }
+}
+
+    if (!match) {
+      return { ...req, status: "missing", grade: null };
+    }
+
+    const grade = normalizeString(match.grade);
+    if (!grade) {
+      return { ...req, status: "planned", grade: null };
+    }
+    if (EXCLUDED.has(grade)) {
+      return { ...req, status: "failed", grade };
+    }
+    if (PASSING_GRADES.has(grade)) {
+      return { ...req, status: "passed", grade };
+    }
+    return { ...req, status: "planned", grade: null };
+  });
+
+  // Check CMPS elective credits: any CMPS course not in the required list
+  const requiredKeys = new Set(
+    MAJOR_REQUIRED_COURSES.map((r) => `${normalizeString(r.code)}-${normalizeString(r.number)}`)
+  );
+  // Add alternative discrete math keys
+  requiredKeys.add("CMPS-211");
+  requiredKeys.add("MATH-211");
+
+  let electiveCreditsEarned = 0;
+  for (const uc of allUserCourses) {
+    const { code, number } = getCourseCodeAndNumber(uc);
+    
+    if (!code || !number) continue;
+    if (code !== "CMPS") continue;
+    if (requiredKeys.has(`${code}-${number}`)) continue;
+    
+    // Count if not failed/withdrawn and is a real course (not elective placeholder)
+    const grade = normalizeString(uc.grade);
+    if (grade && EXCLUDED.has(grade)) continue;
+    electiveCreditsEarned += getCourseCredits(uc);
+  }
+
+  return {
+    requiredRows,
+    electiveCreditsEarned,
+    electiveCreditsRequired: CMPS_ELECTIVE_CREDITS_REQUIRED,
+  };
+}
   function calcElectivesProgress(semesterList) {
     const EXCLUDED = new Set(["F", "W", "FAIL"]);
     const counted = [];
@@ -1128,7 +1251,65 @@ export default function Dashboard() {
   }, []);
 
   const moveCourse = useCallback(async (courseId, fromSemesterId, toSemesterId) => {
-    if (fromSemesterId === toSemesterId) return;
+    if (fromSemesterId === toSemesterId) return false;
+
+    const targetSemester = semesters.find((semester) => semester.id === toSemesterId);
+    const sourceSemester = semesters.find((semester) => semester.id === fromSemesterId);
+    const movingCourse =
+      sourceSemester?.user_courses?.find((course) => course.id === courseId) || null;
+
+    if (!targetSemester || !movingCourse) {
+      return false;
+    }
+
+    if (movingCourse.course_id) {
+      const { data: prereqs, error: prereqError } = await supabase
+  .from("prerequisites")
+  .select("prereq_course_id, group_id")
+  .eq("course_id", movingCourse.course_id);
+
+      if (prereqError) {
+        console.error("Failed to check prerequisites before move:", prereqError);
+        alert("Error checking prerequisites.");
+        return false;
+      }
+
+      const targetSemesterNumber = Number(targetSemester.semester_number ?? 0);
+      const missingPrereqIds = (prereqs || [])
+        .map((prereq) => prereq.prereq_course_id)
+        .filter(Boolean)
+        .filter((prereqCourseId) => {
+          if (passedCourseIds.has(prereqCourseId)) {
+            return false;
+          }
+
+          return !semesters.some((semester) => {
+            const semesterNumber = Number(semester.semester_number ?? 0);
+
+            if (semesterNumber >= targetSemesterNumber) {
+              return false;
+            }
+
+            return (semester.user_courses || []).some(
+              (course) => course.id !== courseId && course.course_id === prereqCourseId,
+            );
+          });
+        });
+
+      if (missingPrereqIds.length > 0) {
+        const { data: missingCourses } = await supabase
+          .from("courses")
+          .select("id, code, number, name")
+          .in("id", missingPrereqIds);
+
+        alert(
+          `Cannot move course. Missing prerequisites: ${(missingCourses || [])
+            .map((course) => `${course.code} ${course.number} - ${course.name}`)
+            .join(", ")}`,
+        );
+        return false;
+      }
+    }
 
     updateSemesterList((prev) => {
       let movedCourse = null;
@@ -1178,8 +1359,11 @@ export default function Dashboard() {
     if (error) {
       console.error("Failed to move course:", error);
       await initialize(true, selectedPlanId);
+      return false;
     }
-  }, [selectedPlanId, updateSemesterList]);
+
+    return true;
+  }, [initialize, passedCourseIds, selectedPlanId, semesters, updateSemesterList]);
 
   const deleteCourse = useCallback(async (courseId) => {
     updateSemesterContainingCourse(courseId, (semester) => {
@@ -1225,9 +1409,9 @@ export default function Dashboard() {
       }
 
       const { data: prereqs, error: prereqError } = await supabase
-        .from("prerequisites")
-        .select("prereq_course_id")
-        .eq("course_id", course.id);
+  .from("prerequisites")
+  .select("prereq_course_id, group_id")
+  .eq("course_id", course.id);
 
       if (prereqError) {
         alert("Error checking prerequisites.");
@@ -1271,18 +1455,45 @@ export default function Dashboard() {
       .filter(Boolean),
   );
 
-        const missing = prereqs.filter(
-          (p) => !freshPassedCourseIds.has(p.prereq_course_id),
-        );
+// Check prerequisites - allow all grades EXCEPT F/W/WF/FAIL
+const prerequisiteMet = new Set();
+const FAILED_GRADES = new Set(["F", "W", "WF", "FAIL"]);
 
-        if (missing.length > 0) {
-          const { data: missingCourses } = await supabase
-            .from("courses")
-            .select("id, code, number, name")
-            .in(
-              "id",
-              missing.map((m) => m.prereq_course_id),
-            );
+for (const userCourse of freshUserCourses || []) {
+  const grade = userCourse.grade ? String(userCourse.grade).trim().toUpperCase() : null;
+  
+  // Count as met if: no grade (planned) OR any grade that's NOT failed/withdrawn
+  if (!grade || !FAILED_GRADES.has(grade)) {
+    prerequisiteMet.add(userCourse.course_id);
+  }
+}
+
+// Group prerequisites by group_id
+const groupedPrereqs = {};
+for (const prereq of prereqs) {
+  const groupId = prereq.group_id || "default";
+  if (!groupedPrereqs[groupId]) {
+    groupedPrereqs[groupId] = [];
+  }
+  groupedPrereqs[groupId].push(prereq.prereq_course_id);
+}
+
+// Check if at least one course from each group is satisfied
+const missingGroups = [];
+for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
+  const hasAtLeastOne = courseIds.some((courseId) => prerequisiteMet.has(courseId));
+  if (!hasAtLeastOne) {
+    missingGroups.push(...courseIds);
+  }
+}
+        if (missingGroups.length > 0) {
+  const { data: missingCourses } = await supabase
+    .from("courses")
+    .select("id, code, number, name")
+    .in(
+      "id",
+      [...new Set(missingGroups)],
+    );
 
           alert(
             `Missing prerequisites: ${(missingCourses || [])
@@ -1507,19 +1718,48 @@ const attributeToUse =
       setAddingSemester(false);
     }
   }
+ const majorProgress = useMemo(
+  () => calcMajorRequirementsProgress(semesters, allCourses, prerequisiteCourses),
+  [semesters, allCourses, prerequisiteCourses]  
+);
 
-  async function handleExport(format) {
+    async function handleExport(format) {
     setExportMenuOpen(false);
 
-    const incompleteRows = electiveRows.filter((row) => !row.isExact);
-    if (incompleteRows.length > 0) {
-      const details = incompleteRows
-        .map((row) => `• ${row.bucket}: ${row.earned}/${row.required}`)
-        .join("\n");
+    const incompleteMajorRows = majorProgress.requiredRows.filter((r) => r.status === "missing" || r.status === "failed");
+    const electivesMissing = majorProgress.electiveCreditsEarned < majorProgress.electiveCreditsRequired;
+    const incompleteElectiveRows = electiveRows.filter((row) => !row.isExact);
+
+    const details = [];
+
+    // Add missing/failed major requirements
+    if (incompleteMajorRows.length > 0) {
+      details.push(
+        "Missing major courses:",
+        incompleteMajorRows.map((r) => `• ${r.code} ${r.number} - ${r.name}`).join("\n")
+      );
+    }
+
+    // Add missing CMPS electives
+    if (electivesMissing) {
+      details.push(
+        `CMPS electives: ${majorProgress.electiveCreditsEarned}/${majorProgress.electiveCreditsRequired} credits`
+      );
+    }
+
+    // Add incomplete electives
+    if (incompleteElectiveRows.length > 0) {
+      details.push(
+        "Incomplete elective requirements:",
+        incompleteElectiveRows.map((row) => `• ${row.bucket}: ${row.earned}/${row.required}`).join("\n")
+      );
+    }
+
+    // Show alert if any issues
+    if (details.length > 0) {
       alert(
         `Cannot export your graduation plan.\n\n` +
-          `All elective requirements must be met exactly (no more, no less). ` +
-          `Please fix the following before exporting:\n\n${details}`,
+        `Please fix the following before exporting:\n\n${details.join("\n")}`
       );
       return;
     }
@@ -1602,6 +1842,14 @@ const attributeToUse =
     () => electiveRows.reduce((sum, row) => sum + row.remaining, 0),
     [electiveRows],
   );
+ 
+const majorRequirementsMet = useMemo(
+  () =>
+    majorProgress.requiredRows.every((r) => r.status === "passed") &&
+    majorProgress.electiveCreditsEarned >= majorProgress.electiveCreditsRequired,
+  [majorProgress]
+);
+
   const drawerOpen = isMobile ? mobileCatalogOpen : sidebarOpen;
 
   const mobileElectivesPanel =
@@ -1992,10 +2240,33 @@ const attributeToUse =
                 {mobileElectivesOpen ? "Hide Electives" : "Show Electives"}
               </button>
             )}
+            {isMobile && (
+  <button
+    type="button"
+    onClick={() => setMobileMajorReqOpen((prev) => !prev)}
+    style={{
+      padding: "10px 12px",
+      borderRadius: 10,
+      border: "1px solid #ddd",
+      background: "#fff",
+      color: "#111",
+      cursor: "pointer",
+      fontSize: 14,
+      minHeight: 44,
+    }}
+  >
+    {mobileMajorReqOpen ? "Hide Major Req." : "Major Req."}
+  </button>
+)}
           </div>
         </div>
 
         {mobileElectivesPanel}
+{isMobile && mobileMajorReqOpen && (
+  <div style={{ padding: "0 16px 16px" }}>
+    <MajorRequirementsPanel majorProgress={majorProgress} />
+  </div>
+)}
 
         <div
           style={{
@@ -2198,7 +2469,7 @@ const attributeToUse =
                     {electivesRemainingTotal} left
                   </span>
                 </div>
-
+  
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {electiveRows.map((row) => {
                     const ok = row.isExact;
@@ -2240,13 +2511,17 @@ const attributeToUse =
                               borderRadius: 999,
                             }}
                           />
+                          
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-            </div>
+        <div style={{ marginTop: 16 }}>
+      <MajorRequirementsPanel majorProgress={majorProgress} />
+    </div>
+  </div>
           )}
         </div>
       </div>
@@ -2286,7 +2561,82 @@ function SidebarOverlay({ onClose }) {
     />
   );
 }
+function MajorRequirementsPanel({ majorProgress }) {
+  const { requiredRows, electiveCreditsEarned, electiveCreditsRequired } = majorProgress;
+  const electivePct = Math.min(100, Math.round((electiveCreditsEarned / electiveCreditsRequired) * 100));
+  const electiveMet = electiveCreditsEarned >= electiveCreditsRequired;
 
+  const statusLabel = {
+    passed: (uc) => uc.grade,
+    planned: () => "In plan",
+    missing: () => "Not added",
+    failed: (uc) => `Failed (${uc.grade})`,
+  };
+
+  const statusStyle = {
+    passed:  { border: "1px solid #86efac", background: "#f0fdf4", badge: { background: "#dcfce7", color: "#15803d" } },
+    planned: { border: "1px solid #fde68a", background: "#fffbeb", badge: { background: "#fef3c7", color: "#92400e" } },
+    missing: { border: "1px solid #e5e7eb", background: "#f9fafb", badge: { background: "#f3f4f6", color: "#6b7280" } },
+    failed:  { border: "1px solid #fecaca", background: "#fef2f2", badge: { background: "#fee2e2", color: "#b91c1c" } },
+  };
+
+  const completedCount = requiredRows.filter((r) => r.status === "passed" || r.status === "planned").length;
+
+  return (
+    <div style={{ background: "white", borderRadius: 14, padding: 14, border: "1px solid #eee", boxShadow: "0 1px 6px rgba(0,0,0,0.06)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, alignItems: "center" }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>Major Requirements</span>
+        <span style={{ fontSize: 12, color: "#666" }}>
+          {completedCount} / {requiredRows.length} done
+        </span>
+      </div>
+
+      {/* Required courses */}
+      <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 6 }}>
+        Required Courses
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {requiredRows.map((row) => {
+          const s = statusStyle[row.status];
+          return (
+            <div key={`${row.code}-${row.number}`} style={{ border: s.border, borderRadius: 8, padding: "7px 10px", background: s.background, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12, color: "#111" }}>
+                  {row.code} {row.number}
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{row.name}</div>
+              </div>
+              <span style={{ ...s.badge, fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                {statusLabel[row.status](row)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CMPS Electives */}
+      <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.05em", textTransform: "uppercase", margin: "10px 0 6px" }}>
+        CMPS Electives
+      </div>
+      <div style={{
+        border: electiveMet ? "1px solid #86efac" : "1px solid #fde68a",
+        borderRadius: 8,
+        padding: 10,
+        background: electiveMet ? "#f0fdf4" : "#fffbeb",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+          <span style={{ fontWeight: 600 }}>CMPS electives</span>
+          <span style={{ color: electiveMet ? "#15803d" : "#92400e", fontWeight: 600 }}>
+            {electiveCreditsEarned} / {electiveCreditsRequired} cr.
+          </span>
+        </div>
+        <div style={{ height: 6, background: "#eee", borderRadius: 999, marginTop: 6 }}>
+          <div style={{ height: 6, width: `${electivePct}%`, background: electiveMet ? "#16a34a" : "#f59e0b", borderRadius: 999 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 function DragLayerHost({ isMobile }) {
   const isDragging = useDragLayer((monitor) => monitor.isDragging());
 
