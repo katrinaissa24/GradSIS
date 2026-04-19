@@ -28,6 +28,7 @@ function calcCompletedCredits(semesters) {
       if (
         c.grade &&
         c.grade !== "F" &&
+        c.grade !== "FAIL" &&
         c.grade !== "W" &&
         c.grade !== "WF"
       ) {
@@ -58,6 +59,8 @@ export default function SettingsPage() {
   const [startingTerms, setStartingTerms] = useState([]);
   const [savingPlan, setSavingPlan] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [clearingPlanId, setClearingPlanId] = useState(null);
+  const [resettingPlanId, setResettingPlanId] = useState(null);
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth <= 768 : false,
   );
@@ -248,6 +251,187 @@ export default function SettingsPage() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/auth");
+  }
+
+  async function getPlanSemesterIds(planId) {
+    const { data, error } = await supabase
+      .from("user_semesters")
+      .select("id")
+      .eq("plan_id", planId)
+      .eq("user_id", authUser.id);
+
+    if (error) throw error;
+    return (data || []).map((s) => s.id);
+  }
+
+  async function clearPlanCourses(planId) {
+    if (!authUser?.id) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to remove all courses from this plan? The semesters will stay, but every course in this plan will be deleted."
+    );
+    if (!confirmed) return;
+
+    setClearingPlanId(planId);
+
+    try {
+      const semesterIds = await getPlanSemesterIds(planId);
+
+      if (!semesterIds.length) {
+        return;
+      }
+
+      const { error } = await supabase
+        .from("user_courses")
+        .delete()
+        .in("semester_id", semesterIds);
+
+      if (error) throw error;
+
+      if (selectedPlanId === planId) {
+        setGpa("0.00");
+        setHours(0);
+        setCompleted(0);
+      }
+
+      alert("Plan cleared successfully.");
+    } catch (err) {
+      console.error("Failed to clear plan:", err);
+      alert("Failed to clear plan.");
+    } finally {
+      setClearingPlanId(null);
+    }
+  }
+
+  async function resetPlanToDefault(planId) {
+    if (!authUser?.id) return;
+
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+
+    if (!plan.startingTermId) {
+      alert("This plan does not have a starting semester yet.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to reset this plan to the default major plan? All current plan courses will be removed and replaced with the default template courses."
+    );
+    if (!confirmed) return;
+
+    setResettingPlanId(planId);
+
+    try {
+      const semesterIds = await getPlanSemesterIds(planId);
+
+      if (!semesterIds.length) {
+        throw new Error("This plan has no semesters to reset.");
+      }
+
+      const { error: deleteError } = await supabase
+        .from("user_courses")
+        .delete()
+        .in("semester_id", semesterIds);
+
+      if (deleteError) throw deleteError;
+
+      const { data: termRow, error: termError } = await supabase
+        .from("starting_terms")
+        .select("id, name, template_id")
+        .eq("id", plan.startingTermId)
+        .single();
+
+      if (termError || !termRow) {
+        throw new Error("Could not find the starting term for this plan.");
+      }
+
+      const templateId = termRow.template_id;
+      if (!templateId) {
+        throw new Error("This starting term has no template.");
+      }
+
+      const { data: templateSemesters, error: templateSemestersError } =
+        await supabase
+          .from("template_semesters")
+          .select("*")
+          .eq("template_id", templateId);
+
+      if (templateSemestersError) throw templateSemestersError;
+
+      const { data: userSemesters, error: userSemestersError } = await supabase
+        .from("user_semesters")
+        .select("id, semester_number")
+        .eq("plan_id", planId)
+        .eq("user_id", authUser.id);
+
+      if (userSemestersError) throw userSemestersError;
+
+      for (const ts of templateSemesters || []) {
+        const { data: templateCourses, error: courseFetchError } = await supabase
+          .from("template_courses")
+          .select("course_id")
+          .eq("template_semester_id", ts.id);
+
+        if (courseFetchError) throw courseFetchError;
+
+        const userSemester = (userSemesters || []).find(
+          (us) => us.semester_number === ts.semester_number
+        );
+
+        if (!userSemester || !templateCourses?.length) continue;
+
+        const userCourses = templateCourses.map((tc, idx) => ({
+          user_id: authUser.id,
+          semester_id: userSemester.id,
+          course_id: tc.course_id,
+          attribute: "Elective",
+          order_index: idx,
+        }));
+
+        const { error: insertCoursesError } = await supabase
+          .from("user_courses")
+          .insert(userCourses);
+
+        if (insertCoursesError) throw insertCoursesError;
+      }
+
+      if (selectedPlanId === planId) {
+        const { data: refreshedCourses, error: refreshedCoursesError } = await supabase
+          .from("user_courses")
+          .select(`
+            *,
+            courses ( id, name, code, number, credits )
+          `)
+          .in("semester_id", semesterIds);
+
+        if (refreshedCoursesError) throw refreshedCoursesError;
+
+        const allCourses = refreshedCourses || [];
+
+        const grouped = allCourses.reduce((acc, c) => {
+          (acc[c.semester_id] ||= []).push(c);
+          return acc;
+        }, {});
+
+        const semestersForGpa = semesterIds.map((id) => ({
+          id,
+          user_courses: grouped[id] || [],
+        }));
+
+        setGpa(
+          calculateCumulativeGPAWithRepeats(allCourses, semestersForGpa) || "0.00"
+        );
+        setHours(calculateGPACreditHours(allCourses, semestersForGpa) || 0);
+        setCompleted(calcCompletedCredits(semestersForGpa));
+      }
+
+      alert("Plan reset successfully.");
+    } catch (err) {
+      console.error("Failed to reset plan:", err);
+      alert(err.message || "Failed to reset plan.");
+    } finally {
+      setResettingPlanId(null);
+    }
   }
 
   // Update the major for a plan (clears starting_term when major changes)
@@ -715,6 +899,8 @@ export default function SettingsPage() {
                 >
                   {plans.map((plan) => {
                     const isSaving = savingPlan === plan.id;
+                      const isClearing = clearingPlanId === plan.id;
+                      const isResetting = resettingPlanId === plan.id;
                     // Filter starting terms to only those matching this plan's selected major
                     const filteredTerms = plan.majorId
                       ? startingTerms.filter((t) => t.major_id === plan.majorId)
@@ -842,6 +1028,69 @@ export default function SettingsPage() {
                             Updating plan courses...
                           </div>
                         )}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            marginTop: 14,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => clearPlanCourses(plan.id)}
+                            disabled={isSaving || isClearing|| isResetting}
+                            style={{
+                              padding: "10px 14px",
+                              borderRadius: 8,
+                              border: "1px solid #dc2626",
+                              background: "#fff",
+                              color: "#dc2626",
+                              fontSize: 14,
+                              fontWeight: 600,
+                              cursor:
+                                isSaving || isClearing || isResetting ? "not-allowed" : "pointer",
+                              opacity: isSaving || isClearing || isResetting ? 0.6 : 1,
+                            }}
+                          >
+                            {isClearing ? "Clearing..." : "Clear Plan"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => resetPlanToDefault(plan.id)}
+                            disabled={
+                              isSaving ||
+                              isClearing ||
+                              isResetting ||
+                              !plan.startingTermId
+                            }
+                            style={{
+                              padding: "10px 14px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "#111",
+                              color: "#fff",
+                              fontSize: 14,
+                              fontWeight: 600,
+                              cursor:
+                                isSaving ||
+                                isClearing ||
+                                isResetting ||
+                                !plan.startingTermId
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity:
+                                isSaving ||
+                                isClearing ||
+                                isResetting ||
+                                !plan.startingTermId
+                                  ? 0.6
+                                  : 1,
+                            }}
+                          >
+                            {isResetting ? "Resetting..." : "Reset to Default"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
