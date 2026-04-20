@@ -58,6 +58,7 @@ const [selectedTermId, setSelectedTermId] = useState(null);
               password,
               options: {
     data: {
+      name,
       template_id: selectedTemplateId,   
       major_id: selectedMajorId,        
       starting_term_id: selectedTermId,  
@@ -68,23 +69,7 @@ const [selectedTermId, setSelectedTermId] = useState(null);
 
           if (signUpError) throw signUpError;
 
-          const { data: userData, error: insertError } = await supabase
-            .from("users")
-            .insert([
-              {
-                id: authData.user.id, // MUST come from Auth
-                email: authData.user.email, // NOT NULL
-                name: name || null, // optional
-                major_id: null, // optional, can stay null at signup
-                starting_term_id: null, // optional
-                current_gpa: null, // optional
-                credits_completed: 0, // default value
-                student_type: null, // optional
-              },
-            ])
-            .select(); // optional, returns the inserted row
-
-          if (insertError) throw insertError;
+          
 
           // 3️⃣ Show success message
           setMessage({
@@ -92,7 +77,6 @@ const [selectedTermId, setSelectedTermId] = useState(null);
             isError: false,
           });
 
-          console.log("User signed up and saved in users table:", userData);
         } catch (err) {
           console.error("Signup error:", err);
           setMessage({
