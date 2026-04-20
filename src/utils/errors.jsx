@@ -18,6 +18,198 @@ const PASSED_GRADES = [
   "PASS",
 ];
 
+function getCourseLookupKey(courseLike) {
+  const code = String(courseLike?.code || "").trim().toUpperCase();
+  const number = String(courseLike?.number || "").trim().toUpperCase();
+  return code && number ? `${code}-${number}` : null;
+}
+
+async function fetchEarliestUserPlacementByKey(userId, courseKey) {
+  if (!userId || !courseKey) return null;
+
+  const { data: userSemesters, error: userSemestersError } = await supabase
+    .from("user_semesters")
+    .select("id, semester_number")
+    .eq("user_id", userId);
+
+  if (userSemestersError || !userSemesters?.length) return null;
+
+  const semesterNumberById = Object.fromEntries(
+    userSemesters.map((semester) => [semester.id, semester.semester_number]),
+  );
+
+  const { data: userCourses, error: userCoursesError } = await supabase
+    .from("user_courses")
+    .select("semester_id, course_id")
+    .eq("user_id", userId)
+    .in("semester_id", userSemesters.map((semester) => semester.id));
+
+  if (userCoursesError || !userCourses?.length) return null;
+
+  const courseIds = [...new Set(userCourses.map((row) => row.course_id).filter(Boolean))];
+  const { data: courseRows, error: courseRowsError } = courseIds.length
+    ? await supabase
+        .from("courses")
+        .select("id, code, number")
+        .in("id", courseIds)
+    : { data: [], error: null };
+
+  if (courseRowsError) return null;
+
+  const courseKeyById = Object.fromEntries(
+    (courseRows || []).map((course) => [course.id, getCourseLookupKey(course)]),
+  );
+
+  return userCourses.reduce((minSemester, row) => {
+    const semesterNumber = semesterNumberById[row.semester_id];
+    if (!semesterNumber || courseKeyById[row.course_id] !== courseKey) {
+      return minSemester;
+    }
+
+    if (minSemester == null) return semesterNumber;
+    return Math.min(minSemester, semesterNumber);
+  }, null);
+}
+
+async function fetchTemplatePlacementForCourse({
+  userId,
+  selectedSemesterId,
+  course,
+}) {
+  if (!userId || !selectedSemesterId || !course) {
+    return {
+      selectedSemester: null,
+      earliestTemplateSemester: null,
+    };
+  }
+
+  const courseKey = getCourseLookupKey(course);
+
+  const { data: selectedSemester, error: selectedSemesterError } = await supabase
+    .from("user_semesters")
+    .select("id, semester_number, plan_id")
+    .eq("id", selectedSemesterId)
+    .eq("user_id", userId)
+    .single();
+
+  if (selectedSemesterError || !selectedSemester) {
+    return {
+      selectedSemester: null,
+      earliestTemplateSemester: null,
+    };
+  }
+
+  const { data: planRow, error: planError } = await supabase
+    .from("plans")
+    .select("id, starting_term_id")
+    .eq("id", selectedSemester.plan_id)
+    .single();
+
+  let startingTermId = !planError ? planRow?.starting_term_id || null : null;
+
+  if (!startingTermId) {
+    const { data: userRow, error: userError } = await supabase
+      .from("users")
+      .select("starting_term_id")
+      .eq("id", userId)
+      .single();
+
+    if (!userError) {
+      startingTermId = userRow?.starting_term_id || null;
+    }
+  }
+
+  if (!startingTermId) {
+    const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+    return {
+      selectedSemester,
+      earliestTemplateSemester: fallbackPlacement,
+    };
+  }
+
+  const { data: startingTerm, error: startingTermError } = await supabase
+    .from("starting_terms")
+    .select("template_id")
+    .eq("id", startingTermId)
+    .single();
+
+  if (startingTermError || !startingTerm?.template_id) {
+    const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+    return {
+      selectedSemester,
+      earliestTemplateSemester: fallbackPlacement,
+    };
+  }
+
+  const { data: templateSemesters, error: templateSemestersError } = await supabase
+    .from("template_semesters")
+    .select("id, semester_number")
+    .eq("template_id", startingTerm.template_id);
+
+  if (templateSemestersError || !templateSemesters?.length) {
+    const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+    return {
+      selectedSemester,
+      earliestTemplateSemester: fallbackPlacement,
+    };
+  }
+
+  const semesterNumberByTemplateSemesterId = Object.fromEntries(
+    templateSemesters.map((semester) => [semester.id, semester.semester_number]),
+  );
+
+  const { data: templateCourses, error: templateCoursesError } = await supabase
+    .from("template_courses")
+    .select("course_id, template_semester_id")
+    .in("template_semester_id", templateSemesters.map((semester) => semester.id));
+
+  if (templateCoursesError || !templateCourses?.length) {
+    const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+    return {
+      selectedSemester,
+      earliestTemplateSemester: fallbackPlacement,
+    };
+  }
+
+  const templateCourseIds = [...new Set(templateCourses.map((row) => row.course_id).filter(Boolean))];
+  const { data: templateCourseRows, error: templateCourseRowsError } = templateCourseIds.length
+    ? await supabase
+        .from("courses")
+        .select("id, code, number")
+        .in("id", templateCourseIds)
+    : { data: [], error: null };
+
+  if (templateCourseRowsError) {
+    const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+    return {
+      selectedSemester,
+      earliestTemplateSemester: fallbackPlacement,
+    };
+  }
+
+  const templateCourseKeyById = Object.fromEntries(
+    (templateCourseRows || []).map((courseRow) => [courseRow.id, getCourseLookupKey(courseRow)]),
+  );
+
+  const earliestTemplateSemester = templateCourses.reduce((minSemester, row) => {
+    const semesterNumber = semesterNumberByTemplateSemesterId[row.template_semester_id];
+    if (!semesterNumber || templateCourseKeyById[row.course_id] !== courseKey) {
+      return minSemester;
+    }
+
+    if (minSemester == null) return semesterNumber;
+    return Math.min(minSemester, semesterNumber);
+  }, null);
+
+  const fallbackPlacement = await fetchEarliestUserPlacementByKey(userId, courseKey);
+  const resolvedPlacement = earliestTemplateSemester ?? fallbackPlacement;
+
+  return {
+    selectedSemester,
+    earliestTemplateSemester: resolvedPlacement,
+  };
+}
+
 export default function Prerequisite({
   userId,
   selectedSemesterId,
@@ -257,6 +449,22 @@ export default function Prerequisite({
         return;
       }
 
+      const { data: selectedSemesterForPrereqs, error: selectedSemesterForPrereqsError } =
+        await supabase
+          .from("user_semesters")
+          .select("id, semester_number")
+          .eq("id", selectedSemesterId)
+          .eq("user_id", userId)
+          .single();
+
+      if (selectedSemesterForPrereqsError || !selectedSemesterForPrereqs) {
+        setMessage({
+          text: "Could not verify the selected semester.",
+          type: "error",
+        });
+        return;
+      }
+
       const { data: prereqs, error: prereqError } = await supabase
   .from("prerequisites")
   .select("prereq_course_id, group_id")
@@ -273,7 +481,7 @@ export default function Prerequisite({
         const { data: freshUserCourses, error: freshUserCoursesError } =
           await supabase
             .from("user_courses")
-            .select("course_id, grade, status")
+            .select("course_id, grade, status, semester_id")
             .eq("user_id", userId);
 
         if (freshUserCoursesError) {
@@ -285,14 +493,35 @@ export default function Prerequisite({
         }
 
         const FAILED_GRADES = new Set(["F", "W", "WF", "FAIL"]);
+        const { data: userSemesters, error: userSemestersError } = await supabase
+          .from("user_semesters")
+          .select("id, semester_number")
+          .eq("user_id", userId);
 
-const freshPassedCourseIds = (freshUserCourses || [])
-  .filter((c) => {
-    const grade = c.grade ? String(c.grade).trim().toUpperCase() : null;
-    if (grade && FAILED_GRADES.has(grade)) return false;
-    return PASSED_GRADES.includes(c.grade) || c.status === "enrolled" || c.status === "completed";
-  })
-  .map((c) => c.course_id);
+        if (userSemestersError) {
+          setMessage({
+            text: "Error checking prerequisite semesters.",
+            type: "error",
+          });
+          return;
+        }
+
+const semesterNumberById = Object.fromEntries(
+  (userSemesters || []).map((semester) => [semester.id, semester.semester_number]),
+);
+
+const prerequisiteMet = new Set(
+  (freshUserCourses || [])
+    .filter((courseRow) => {
+      const grade = courseRow.grade ? String(courseRow.grade).trim().toUpperCase() : null;
+      const semesterNumber = Number(semesterNumberById[courseRow.semester_id] ?? 0);
+      if (!(semesterNumber > 0 && semesterNumber < Number(selectedSemesterForPrereqs.semester_number ?? 0))) {
+        return false;
+      }
+      return !grade || !FAILED_GRADES.has(grade);
+    })
+    .map((courseRow) => courseRow.course_id)
+);
 
 // Group prerequisites by group_id
 const groupedPrereqs = {};
@@ -307,7 +536,7 @@ for (const prereq of prereqs) {
 // Check if at least one course from each group is satisfied
 const missingGroups = [];
 for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
-  const hasAtLeastOne = courseIds.some((courseId) => freshPassedCourseIds.includes(courseId));
+  const hasAtLeastOne = courseIds.some((courseId) => prerequisiteMet.has(courseId));
   if (!hasAtLeastOne) {
     missingGroups.push(...courseIds);
   }
@@ -342,15 +571,16 @@ const missing = missingGroups.length > 0 ? missingGroups : [];
         }
       }
 
-      const { data: selectedSemester, error: selectedSemesterError } =
-        await supabase
-          .from("user_semesters")
-          .select("id, semester_number")
-          .eq("id", selectedSemesterId)
-          .eq("user_id", userId)
-          .single();
+      const {
+        selectedSemester,
+        earliestTemplateSemester,
+      } = await fetchTemplatePlacementForCourse({
+        userId,
+        selectedSemesterId,
+        course: selectedCourse,
+      });
 
-      if (selectedSemesterError || !selectedSemester) {
+      if (!selectedSemester) {
         setMessage({
           text: "Could not verify the selected semester.",
           type: "error",
@@ -359,11 +589,11 @@ const missing = missingGroups.length > 0 ? missingGroups : [];
       }
 
       if (
-        selectedCourse.req_sem &&
-        selectedSemester.semester_number < selectedCourse.req_sem
+        earliestTemplateSemester &&
+        selectedSemester.semester_number < earliestTemplateSemester
       ) {
         setMessage({
-          text: `This course is intended for semester ${selectedCourse.req_sem} or later.`,
+          text: `This course is assigned to semester ${earliestTemplateSemester} or later in the selected template.`,
           type: "warning",
         });
         return;
@@ -430,7 +660,6 @@ async function assignCourseToSemester(course, semesterId) {
     attribute,
   });
 
-  console.log("insert error:", error);
   return error;
 } 
 
