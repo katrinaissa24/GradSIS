@@ -455,8 +455,7 @@ export default function Dashboard() {
     return { completed, total };
   }
 function calcMajorRequirementsProgress(semesterList, allUserCourses, prerequisiteCourses = []) {
-  const EXCLUDED = new Set(["F", "W", "WF", "FAIL"]);
-
+const EXCLUDED = new Set(["GRADE", "F", "W", "WF", "FAIL"]);
   function normalizeString(val) {
     return val ? String(val).trim().toUpperCase() : null;
   }
@@ -552,8 +551,8 @@ for (const uc of allUserCourses) {
     
     // Count if not failed/withdrawn and is a real course (not elective placeholder)
     const grade = normalizeString(uc.grade);
-    if (grade && EXCLUDED.has(grade)) continue;
-    electiveCreditsEarned += getCourseCredits(uc);
+if (!grade || EXCLUDED.has(grade)) continue;
+electiveCreditsEarned += getCourseCredits(uc);
   }
 
   return {
@@ -563,12 +562,13 @@ for (const uc of allUserCourses) {
   };
 }
   function calcElectivesProgress(semesterList) {
-    const EXCLUDED = new Set(["F", "W", "FAIL"]);
+    const EXCLUDED = new Set(["GRADE", "F", "W", "FAIL"]);
     const counted = [];
 
     for (const sem of semesterList) {
       for (const uc of sem.user_courses || []) {
-        if (uc?.grade && EXCLUDED.has(uc.grade)) continue;
+        const grade = String(uc?.grade || "").trim().toUpperCase();
+        if (!grade || EXCLUDED.has(grade)) continue;
 
         let credits = getCourseCredits(uc);
         if (!credits) {
