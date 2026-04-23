@@ -206,6 +206,8 @@ function PrerequisiteSidebar({
   semesters = [],
   onQuickAddCourse,
   onQuickAddElective,
+  cmpsElectiveCreditsEarned = 0,
+onQuickAddCmpsElective,
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -792,6 +794,14 @@ function PrerequisiteSidebar({
             gap: 8,
           }}
         >
+          <CmpsElectiveSection
+      creditsEarned={cmpsElectiveCreditsEarned}
+      creditsRequired={18}
+      isMobile={isMobile}
+      onQuickAdd={onQuickAddCmpsElective}
+      disabled={!mobileSemesterId && isMobile}
+    />
+    <div style={{ height: 1, background: "#f1f5f9", margin: "4px 0" }} />
           {electiveSections
             .filter(({ remaining }) => remaining > 0)
             .flatMap(({ bucket, remaining }) =>
@@ -820,7 +830,8 @@ export default memo(
     prevProps.allUserCourses === nextProps.allUserCourses &&
     prevProps.isMobile === nextProps.isMobile &&
     prevProps.mobileSemesterId === nextProps.mobileSemesterId &&
-    prevProps.semesters === nextProps.semesters,
+    prevProps.semesters === nextProps.semesters&&
+    prevProps.cmpsElectiveCreditsEarned === nextProps.cmpsElectiveCreditsEarned,
 );
 
 function DraggableCourseCard({
@@ -1117,6 +1128,108 @@ function ElectiveSlotCard({
         >
           Add Elective
         </button>
+      )}
+    </div>
+  );}
+  function CmpsElectiveSection({
+  creditsEarned = 0,
+  creditsRequired = 18,
+  isMobile = false,
+  onQuickAdd,
+  disabled = false,
+}) {
+  const ref = useRef(null);
+  const remaining = Math.max(0, creditsRequired - creditsEarned);
+  const pct = Math.min(100, Math.round((creditsEarned / creditsRequired) * 100));
+  const isMet = creditsEarned >= creditsRequired;
+
+  const [{ isDragging }, drag, preview] = useDrag({
+    type: "SIDEBAR_COURSE",
+    item: (monitor) => {
+      const rect = ref.current?.getBoundingClientRect();
+      const clientOffset = monitor.getClientOffset();
+      return {
+        type: "SIDEBAR_COURSE",
+        course: null,
+        electiveAttribute: "CMPS Elective",
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+        grabOffsetX: clientOffset?.x
+          ? clientOffset.x - (rect?.left ?? 0)
+          : (rect?.width ?? 0) / 2,
+        grabOffsetY: clientOffset?.y
+          ? clientOffset.y - (rect?.top ?? 0)
+          : (rect?.height ?? 0) / 2,
+      };
+    },
+    canDrag: !isMobile && !isMet,
+    collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
+  });
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
+  return (
+    <div
+      ref={(node) => {
+        ref.current = node;
+        drag(node);
+      }}
+      style={{
+        padding: "10px 11px",
+        borderRadius: 9,
+        border: isMet ? "1px solid #86efac" : "1px dashed #f59e0b",
+        background: isDragging ? "#e5e7eb" : isMet ? "#f0fdf4" : "#fffbeb",
+        cursor: isMobile || isMet ? "default" : "grab",
+        opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: isMet ? "#059669" : "#b45309" }}>
+          CMPS ELECTIVE
+        </div>
+        <span style={{ fontSize: 10, color: isMet ? "#059669" : "#b45309", fontWeight: 700 }}>
+          {creditsEarned}/{creditsRequired} cr
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: "#374151", marginTop: 2 }}>
+        {isMet ? "Requirement complete ✓" : `${remaining} credit${remaining !== 1 ? "s" : ""} remaining`}
+      </div>
+      <div style={{ height: 5, background: "#e5e7eb", borderRadius: 999, marginTop: 6 }}>
+        <div style={{
+          height: 5,
+          width: `${pct}%`,
+          background: isMet ? "#16a34a" : "#f59e0b",
+          borderRadius: 999,
+          transition: "width 0.3s",
+        }} />
+      </div>
+      {!isMet && isMobile && (
+        <button
+          type="button"
+          onClick={() => onQuickAdd?.()}
+          disabled={disabled}
+          style={{
+            width: "100%",
+            minHeight: 40,
+            marginTop: 10,
+            borderRadius: 8,
+            border: "1px solid #b45309",
+            background: disabled ? "#fef3c7" : "#b45309",
+            color: "#fff",
+            cursor: disabled ? "not-allowed" : "pointer",
+            fontSize: 13,
+            opacity: disabled ? 0.65 : 1,
+          }}
+        >
+          Add CMPS Elective
+        </button>
+      )}
+      {!isMet && !isMobile && (
+        <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 6 }}>
+          Drag onto a semester to add a CMPS elective slot
+        </div>
       )}
     </div>
   );

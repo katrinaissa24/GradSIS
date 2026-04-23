@@ -734,18 +734,24 @@ for (const uc of allUserCourses) {
   requiredKeys.add("MATH-211");
 
   let electiveCreditsEarned = 0;
-  for (const uc of allUserCourses) {
-    const { code, number } = getCourseCodeAndNumber(uc);
-    
-    if (!code || !number) continue;
-    if (code !== "CMPS") continue;
-    if (requiredKeys.has(`${code}-${number}`)) continue;
-    
-    // Count if not failed/withdrawn and is a real course (not elective placeholder)
-    const grade = normalizeString(uc.grade);
-if (!grade || EXCLUDED.has(grade)) continue;
-electiveCreditsEarned += getCourseCredits(uc);
+for (const uc of allUserCourses) {
+  const grade = normalizeString(uc.grade);
+  if (!grade || EXCLUDED.has(grade)) continue;
+
+  // Count CMPS Elective placeholder slots directly
+  const attr = normalizeString(uc.attribute);
+  if (attr === "CMPS ELECTIVE") {
+    electiveCreditsEarned += getCourseCredits(uc);
+    continue;
   }
+
+  // Count real CMPS courses not in the required list
+  const { code, number } = getCourseCodeAndNumber(uc);
+  if (!code || !number) continue;
+  if (code !== "CMPS") continue;
+  if (requiredKeys.has(`${code}-${number}`)) continue;
+  electiveCreditsEarned += getCourseCredits(uc);
+}
 
   return {
     requiredRows,
@@ -1576,6 +1582,7 @@ electiveCreditsEarned += getCourseCredits(uc);
     electiveAttribute,
     semesterTargetCredits = 15,
   ) => {
+    console.log("handleSidebarDrop called", { course, semesterId, electiveAttribute });
     if (!semesterId) {
       alert("Please choose a semester first.");
       return;
@@ -1749,6 +1756,8 @@ for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
       "Technical Elective": "Technical Elective",
       "English Communication": "Engl. Communication",
       "Arabic Communication": "Arab. Communication",
+      "CMPS Elective": "CMPS Elective",
+
     };
 
     const ELIGIBLE_TO_ATTRIBUTE = {
@@ -2020,6 +2029,17 @@ const attributeToUse =
       targetSemester?.target_credits ?? 15,
     );
   }, [handleSidebarDrop, mobileQuickAddSemesterId, prerequisiteCourses, semesters]);
+const handleMobileQuickAddCmpsElective = useCallback(async () => {
+  const targetSemester = semesters.find(
+    (semester) => semester.id === mobileQuickAddSemesterId,
+  );
+  await handleSidebarDrop(
+    null,
+    mobileQuickAddSemesterId,
+    "CMPS Elective",
+    targetSemester?.target_credits ?? 15,
+  );
+}, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
 
   const handleMobileQuickAddElective = useCallback(async (bucket) => {
     const targetSemester = semesters.find(
@@ -2033,6 +2053,7 @@ const attributeToUse =
       targetSemester?.target_credits ?? 15,
     );
   }, [handleSidebarDrop, mobileQuickAddSemesterId, semesters]);
+
 
   const totalGPA = calculateCumulativeGPAWithRepeats(allCourses, semesters);
   const totalHours = calculateGPACreditHours(allCourses, semesters);
@@ -2509,6 +2530,7 @@ const majorRequirementsMet = useMemo(
               transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
               display: "flex",
               flexDirection: "column",
+              overflow: "visible",
             }}
           >
             <div
@@ -2540,7 +2562,7 @@ const majorRequirementsMet = useMemo(
               </button>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto" }}>
+<div style={{ flex: 1, overflowY: "auto", overflowX: "visible" }}>
               <PrerequisiteSidebar
                 courses={prerequisiteCourses}
                 enrolledCourseIds={enrolledCourseIds}
@@ -2552,6 +2574,8 @@ const majorRequirementsMet = useMemo(
                 semesters={semesters}
                 onQuickAddCourse={handleMobileQuickAddCourse}
                 onQuickAddElective={handleMobileQuickAddElective}
+                cmpsElectiveCreditsEarned={majorProgress.electiveCreditsEarned}
+                onQuickAddCmpsElective={handleMobileQuickAddCmpsElective}
               />
             </div>
           </div>
