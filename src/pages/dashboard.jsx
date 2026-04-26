@@ -736,7 +736,7 @@ for (const uc of allUserCourses) {
   let electiveCreditsEarned = 0;
 for (const uc of allUserCourses) {
   const grade = normalizeString(uc.grade);
-  if (!grade || EXCLUDED.has(grade)) continue;
+  if (EXCLUDED.has(grade)) continue;
 
   // Count CMPS Elective placeholder slots directly
   const attr = normalizeString(uc.attribute);
