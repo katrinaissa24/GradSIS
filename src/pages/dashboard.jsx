@@ -760,13 +760,13 @@ for (const uc of allUserCourses) {
   };
 }
   function calcElectivesProgress(semesterList) {
-    const EXCLUDED = new Set(["GRADE", "F", "W", "FAIL"]);
+    const EXCLUDED = new Set(["F", "W", "WF", "FAIL"]);
     const counted = [];
 
     for (const sem of semesterList) {
       for (const uc of sem.user_courses || []) {
         const grade = String(uc?.grade || "").trim().toUpperCase();
-        if (!grade || EXCLUDED.has(grade)) continue;
+        if (grade && EXCLUDED.has(grade)) continue;
 
         let credits = getCourseCredits(uc);
         if (!credits) {
