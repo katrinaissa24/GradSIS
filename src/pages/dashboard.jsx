@@ -484,6 +484,11 @@ export default function Dashboard() {
   const [mobileMajorReqOpen, setMobileMajorReqOpen] = useState(false);
   const [openAddCourseSemesterId, setOpenAddCourseSemesterId] = useState(null);
   const [isSignOutHovered, setIsSignOutHovered] = useState(false);
+  const [toast, setToast] = useState(null);
+const showToast = useCallback((message, type = "error") => {
+  setToast({ message, type });
+  setTimeout(() => setToast(null), 4000);
+}, []);
   const [isTabletLayout, setIsTabletLayout] = useState(() =>
     typeof window !== "undefined"
       ? window.innerWidth <= TABLET_BREAKPOINT
@@ -1508,6 +1513,18 @@ for (const uc of allUserCourses) {
         return false;
       }
     }
+    // Check if moving would exceed the target credits of the destination semester
+    const movingCourseCredits = getCourseCredits(movingCourse);
+    const currentTargetCredits = targetSemester.target_credits ?? 15;
+    const currentSemesterCredits = (targetSemester.user_courses || []).reduce(
+      (sum, uc) => sum + getCourseCredits(uc),
+      0,
+    );
+
+    if (currentSemesterCredits + movingCourseCredits > currentTargetCredits) {
+      showToast(`Cannot move: would exceed the target of ${currentTargetCredits} credits for this semester.`, "error");
+      return false;
+    }
 
     updateSemesterList((prev) => {
       let movedCourse = null;
@@ -2177,6 +2194,27 @@ const majorRequirementsMet = useMemo(
             flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
+          {toast && (
+  <div style={{
+    position: "fixed",
+    top: 20,
+    left: "50%",
+    transform: "translateX(-50%)",
+    zIndex: 9999,
+    background: toast.type === "error" ? "#dc2626" : "#16a34a",
+    color: "#fff",
+    padding: "12px 20px",
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: 500,
+    boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+    maxWidth: "90vw",
+    textAlign: "center",
+    pointerEvents: "none",
+  }}>
+    {toast.message}
+  </div>
+)}
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button
               onClick={() => {
