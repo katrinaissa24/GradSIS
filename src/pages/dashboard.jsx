@@ -1473,7 +1473,7 @@ for (const uc of allUserCourses) {
 
       if (prereqError) {
         console.error("Failed to check prerequisites before move:", prereqError);
-        alert("Error checking prerequisites.");
+        showToast("Error checking prerequisites.");
         return false;
       }
 
@@ -1505,11 +1505,8 @@ for (const uc of allUserCourses) {
           .select("id, code, number, name")
           .in("id", missingPrereqIds);
 
-        alert(
-          `Cannot move course. Missing prerequisites: ${(missingCourses || [])
-            .map((course) => `${course.code} ${course.number} - ${course.name}`)
-            .join(", ")}`,
-        );
+        showToast(`Cannot move course. Missing prerequisites: ${(missingCourses || []).map((course) => `${course.code} ${course.number} - ${course.name}`).join(", ")}`);
+
         return false;
       }
     }
@@ -1620,7 +1617,7 @@ for (const uc of allUserCourses) {
       );
 
       if (alreadyInTargetSemester) {
-        alert("This course is already added in this semester.");
+        showToast("This course is already added in this semester.");
         return;
       }
 
@@ -1708,11 +1705,7 @@ for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
       [...new Set(missingGroups)],
     );
 
-          alert(
-            `Missing prerequisites: ${(missingCourses || [])
-              .map((c) => `${c.code} ${c.number} - ${c.name}`)
-              .join(", ")}`,
-          );
+          showToast(`Missing prerequisites: ${(missingCourses || []).map((c) => `${c.code} ${c.number} - ${c.name}`).join(", ")}`);
           return;
         }
       }
@@ -1731,9 +1724,7 @@ for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
         earliestTemplateSemester &&
         selectedSemester.semester_number < earliestTemplateSemester
       ) {
-        alert(
-          `This course is assigned to semester ${earliestTemplateSemester} or later in the selected template.`,
-        );
+        showToast(`This course is assigned to semester ${earliestTemplateSemester} or later in the selected template.`);
         return;
       }
 
@@ -1743,9 +1734,7 @@ for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
       );
 
       if (currentCredits + (course.credits ?? 0) > semesterTargetCredits) {
-        alert(
-          `Cannot add: would exceed your target of ${semesterTargetCredits} credits for this semester.`,
-        );
+        showToast(`Cannot add: would exceed the target of ${semesterTargetCredits} credits for this semester.`);
         return;
       }
     }
@@ -1757,9 +1746,7 @@ for (const [groupId, courseIds] of Object.entries(groupedPrereqs)) {
       );
 
       if (currentCredits + 3 > semesterTargetCredits) {
-        alert(
-          `Cannot add: would exceed your target of ${semesterTargetCredits} credits for this semester.`,
-        );
+        showToast(`Cannot add: would exceed the target of ${semesterTargetCredits} credits for this semester.`);
         return;
       }
     }
