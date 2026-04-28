@@ -57,6 +57,7 @@ const [selectedTermId, setSelectedTermId] = useState(null);
               email,
               password,
               options: {
+              emailRedirectTo: 'https://gradsis.vercel.app/onboarding',
     data: {
       name,
       template_id: selectedTemplateId,   
